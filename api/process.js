@@ -2,24 +2,23 @@
 // Vercel Serverless Function — Google Gemini API (stable v1)
 // Key is read from process.env.GEMINI_API_KEY and never exposed to the frontend.
 
-const AI_MODEL = 'gemini-3.6-flash'; // ✅ Updated to the latest model
+const AI_MODEL = 'gemini-3.6-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1/models/${AI_MODEL}:generateContent`;
 
-const AI_PROMPT = `You are a helpful menu translator.
-Extract all menu items from the provided image or text.
-Translate each item into English if it is in another language.
+// ✏️ برومبت مخصص لاستخراج رقم الهاتف من ريسيت مصري
+const AI_PROMPT = `You are reading a photo of an Egyptian restaurant delivery receipt. Find the customer's mobile phone number. 
+Egyptian mobile numbers start with 01 and have exactly 11 digits total (e.g. 01012345678). 
+They may appear with a +20 country code, spaces, or dashes, or may be duplicated in different formats on the same receipt. 
+If several phone-like numbers appear, prefer the one nearest "Customer Information" or the delivery address, not a restaurant hotline or order number. 
 Return ONLY valid JSON in this exact format:
 {
-  "menu": [
-    {
-      "name": "Original Name",
-      "translation": "English Translation",
-      "price": "Price if visible"
-    }
-  ],
-  "notes": "Any additional notes"
+  "phone": "01XXXXXXXXX",
+  "notes": "Any additional notes or alternate numbers found"
 }`;
 
+/**
+ * Extract MIME type and Base64 data from a Data URL.
+ */
 function parseImageDataUrl(dataUrl) {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
   if (!match) {
@@ -110,7 +109,7 @@ module.exports = async function handler(req, res) {
       },
     ],
     generationConfig: {
-      responseMimeType: 'application/json', // Force JSON output
+      responseMimeType: 'application/json',
       maxOutputTokens: 2048,
     },
   };
@@ -138,7 +137,6 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await response.json();
-
     const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     res.status(200).json({ result });
