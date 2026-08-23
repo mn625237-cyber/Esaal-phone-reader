@@ -103,7 +103,8 @@
     border: 1px solid var(--line);
     max-height: 200px;
   }
-  .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; }
+  .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; cursor: zoom-in; }
+  .zoom-hint{ text-align:center; font-size:11.5px; color: var(--ink-soft); margin: 6px 0 0; font-weight:600; }
   .status{
     margin-top: 14px;
     font-size: 14px;
@@ -240,6 +241,50 @@
     transition: opacity .25s ease, transform .25s ease;
   }
   .toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- batch review ---------- */
+  .batch-list{ list-style:none; margin:0 0 14px; padding:0; max-height: 60vh; overflow-y:auto; }
+  .batch-item{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 0; border-top: 1px dashed #C9C1AE;
+  }
+  .batch-item:first-child{ border-top:none; }
+  .batch-thumb{
+    width:56px; height:56px; object-fit:cover; border-radius:8px;
+    border:1px solid var(--line); cursor: zoom-in; flex-shrink:0;
+  }
+  .batch-item-body{ flex:1; min-width:0; }
+  .batch-phone-input{
+    width:100%; direction: ltr; text-align:left;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:16px;
+    color: var(--ink); border: none; border-bottom: 2px solid #D8D1BE;
+    background: transparent; padding: 4px 2px; outline:none;
+  }
+  .batch-phone-input:focus{ border-bottom-color: var(--stamp); }
+  .batch-status{ display:block; font-size:11px; color: var(--ink-soft); margin-top:2px; font-weight:600; }
+  .batch-status.error{ color: var(--stamp); }
+  .batch-export{ width:100%; }
+
+  /* ---------- lightbox ---------- */
+  .lightbox{
+    position: fixed; inset:0; background: rgba(10,9,7,.96); z-index: 999;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .lightbox-scroll{
+    width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling: touch;
+    display:flex; align-items:flex-start; justify-content:center; padding: 40px 0;
+  }
+  .lightbox-scroll img{
+    width:100%; max-width:600px; height:auto; cursor: zoom-in;
+    transition: width .25s ease;
+  }
+  .lightbox-scroll img.zoomed-in{ width:280%; max-width:none; cursor: zoom-out; }
+  .lightbox-close{
+    position: fixed; top:16px; left:16px; z-index:1000;
+    width:40px; height:40px; border-radius:50%;
+    background: var(--bg-3); color: var(--text-hi); border:1px solid #4A4437;
+    font-size:18px; display:flex; align-items:center; justify-content:center;
+  }
 </style>
 </head>
 <body>
@@ -253,15 +298,26 @@
   <main>
     <section class="receipt capture-card" id="captureCard">
       <input type="file" id="fileInputCamera" accept="image/*" capture="environment">
-      <input type="file" id="fileInputGallery" accept="image/*">
+      <input type="file" id="fileInputGallery" accept="image/*" multiple>
       <div class="capture-choices">
         <button class="btn-primary" id="cameraBtn">📷 صوّر دلوقتي</button>
         <button class="btn-primary btn-alt" id="galleryBtn">🖼 اختار من المعرض</button>
       </div>
       <div class="preview-wrap" id="previewWrap" hidden>
         <img id="previewImg" alt="صورة الريسيت">
+        <p class="zoom-hint">دوس على الصورة للتكبير ومطابقة الرقم</p>
       </div>
       <div class="status" id="statusText" hidden></div>
+    </section>
+
+    <section class="receipt batch-card" id="batchCard" hidden>
+      <p class="result-label">راجع كل رقم قبل الحفظ (<span id="batchCount">0</span> صورة):</p>
+      <ul class="batch-list" id="batchList"></ul>
+      <div class="result-actions">
+        <button class="btn-primary" id="batchSaveBtn">💾 حفظ الكل</button>
+        <button class="btn-ghost" id="batchDiscardBtn">إلغاء</button>
+      </div>
+      <button class="btn-small batch-export" id="batchExportBtn">⬇️ تنزيل نتائج الدفعة دي</button>
     </section>
 
     <section class="receipt result-card" id="resultCard" hidden>
@@ -295,6 +351,13 @@
   <div class="toast" id="toast"></div>
 </div>
 
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" id="lightboxClose">✕</button>
+  <div class="lightbox-scroll" id="lightboxScroll">
+    <img id="lightboxImg" alt="تكبير الريسيت">
+  </div>
+</div>
+
 <script>
 const STORAGE_KEY = 'phone-log';
 
@@ -306,6 +369,15 @@ const els = {
   previewWrap: document.getElementById('previewWrap'),
   previewImg: document.getElementById('previewImg'),
   statusText: document.getElementById('statusText'),
+  batchCard: document.getElementById('batchCard'),
+  batchCount: document.getElementById('batchCount'),
+  batchList: document.getElementById('batchList'),
+  batchSaveBtn: document.getElementById('batchSaveBtn'),
+  batchDiscardBtn: document.getElementById('batchDiscardBtn'),
+  batchExportBtn: document.getElementById('batchExportBtn'),
+  lightbox: document.getElementById('lightbox'),
+  lightboxImg: document.getElementById('lightboxImg'),
+  lightboxClose: document.getElementById('lightboxClose'),
   resultCard: document.getElementById('resultCard'),
   phoneInput: document.getElementById('phoneInput'),
   resultHint: document.getElementById('resultHint'),
@@ -469,14 +541,25 @@ function openResult(phone, alternates = []){
 els.cameraBtn.addEventListener('click', () => els.fileInputCamera.click());
 els.galleryBtn.addEventListener('click', () => els.fileInputGallery.click());
 
-els.fileInputCamera.addEventListener('change', () => handleFile(els.fileInputCamera));
-els.fileInputGallery.addEventListener('change', () => handleFile(els.fileInputGallery));
+els.fileInputCamera.addEventListener('change', () => {
+  const file = els.fileInputCamera.files[0];
+  els.fileInputCamera.value = '';
+  if (file) handleFile(file);
+});
 
-async function handleFile(inputEl){
-  const file = inputEl.files[0];
-  if (!file) return;
+els.fileInputGallery.addEventListener('change', () => {
+  const files = Array.from(els.fileInputGallery.files);
+  els.fileInputGallery.value = '';
+  if (files.length > 1){
+    handleBatch(files);
+  }else if (files.length === 1){
+    handleFile(files[0]);
+  }
+});
 
+async function handleFile(file){
   els.resultCard.hidden = true;
+  els.batchCard.hidden = true;
   els.previewWrap.hidden = false;
   els.previewImg.src = URL.createObjectURL(file);
   setStatus('');
@@ -491,10 +574,95 @@ async function handleFile(inputEl){
   }catch(err){
     setStatus('حصلت مشكلة في القراءة — جرّب تاني، أو اكتب الرقم يدويًا', true);
     openResult('', []);
-  }finally{
-    inputEl.value = '';
   }
 }
+
+// ---------- lightbox (tap any receipt image to zoom in and compare) ----------
+function openLightbox(src){
+  els.lightboxImg.src = src;
+  els.lightboxImg.classList.remove('zoomed-in');
+  els.lightbox.hidden = false;
+}
+els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src));
+els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
+els.lightboxClose.addEventListener('click', () => { els.lightbox.hidden = true; });
+
+// ---------- batch mode (multiple gallery photos at once) ----------
+let batchState = [];
+
+async function handleBatch(files){
+  els.resultCard.hidden = true;
+  els.previewWrap.hidden = true;
+  els.batchCard.hidden = false;
+  batchState = files.map(file => ({ file, phone: '', status: 'pending', thumb: URL.createObjectURL(file) }));
+  els.batchCount.textContent = batchState.length;
+  renderBatch();
+
+  for (let i = 0; i < batchState.length; i++){
+    batchState[i].status = 'loading';
+    renderBatch();
+    try{
+      const base64 = await resizeImageToBase64(batchState[i].file);
+      const { phone } = await extractPhone(base64);
+      batchState[i].phone = phone || '';
+      batchState[i].status = phone ? 'done' : 'empty';
+    }catch(err){
+      batchState[i].status = 'error';
+    }
+    renderBatch();
+  }
+}
+
+function renderBatch(){
+  const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: 'حصلت مشكلة في القراءة' };
+  els.batchList.innerHTML = batchState.map((item, i) => `
+    <li class="batch-item">
+      <img class="batch-thumb" src="${item.thumb}" data-idx="${i}">
+      <div class="batch-item-body">
+        <input type="tel" class="batch-phone-input" inputmode="numeric" maxlength="14"
+               data-idx="${i}" value="${item.phone}" placeholder="01xxxxxxxxx">
+        <span class="batch-status ${item.status === 'error' ? 'error' : ''}">${labels[item.status] || ''}</span>
+      </div>
+    </li>`).join('');
+}
+
+els.batchList.addEventListener('click', (e) => {
+  const thumb = e.target.closest('.batch-thumb');
+  if (thumb) openLightbox(thumb.src);
+});
+
+els.batchList.addEventListener('input', (e) => {
+  const input = e.target.closest('.batch-phone-input');
+  if (!input) return;
+  batchState[Number(input.dataset.idx)].phone = input.value.trim();
+});
+
+els.batchSaveBtn.addEventListener('click', async () => {
+  const valid = batchState.filter(b => b.phone);
+  if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
+  valid.forEach(b => log.unshift({ phone: b.phone, savedAt: new Date().toISOString() }));
+  await saveLog();
+  renderLog();
+  els.batchCard.hidden = true;
+  batchState = [];
+  showToast(`اتحفظ ${valid.length} رقم ✅`);
+});
+
+els.batchDiscardBtn.addEventListener('click', () => {
+  els.batchCard.hidden = true;
+  batchState = [];
+});
+
+els.batchExportBtn.addEventListener('click', () => {
+  const valid = batchState.filter(b => b.phone);
+  if (!valid.length){ showToast('مفيش أرقام تتصدّر'); return; }
+  const rows = ['الرقم', ...valid.map(b => b.phone)];
+  const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `batch-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+});
 
 els.saveBtn.addEventListener('click', async () => {
   const phone = els.phoneInput.value.trim();
