@@ -579,6 +579,7 @@ async function handleFile(file){
 
 // ---------- lightbox (tap any receipt image to zoom in and compare) ----------
 function openLightbox(src){
+  if (!src) return;
   els.lightboxImg.src = src;
   els.lightboxImg.classList.remove('zoomed-in');
   els.lightbox.hidden = false;
