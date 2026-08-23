@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/extract-phone.js": {
+      "maxDuration": 30
+    }
+  }
+}
