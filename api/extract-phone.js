@@ -34,11 +34,12 @@ module.exports = async function handler(req, res) {
           contents: [{
             parts: [
               { text: PROMPT },
-              { inline_data: { mime_type: 'image/jpeg', data: image } },
+              { inlineData: { mimeType: 'image/jpeg', data: image } },
             ],
           }],
           generationConfig: {
             maxOutputTokens: 2048,
+            responseMimeType: 'application/json',
           },
         }),
       }
