@@ -2,7 +2,7 @@
 // Vercel Serverless Function — Google Gemini API (stable v1)
 // Key is read from process.env.GEMINI_API_KEY and never exposed to the frontend.
 
-const AI_MODEL = 'gemini-2.0-flash'; // يمكنك استخدام 'gemini-1.5-flash' إذا أردت
+const AI_MODEL = 'gemini-3.6-flash'; // ✅ Updated to the latest model
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1/models/${AI_MODEL}:generateContent`;
 
 const AI_PROMPT = `You are a helpful menu translator.
@@ -110,7 +110,7 @@ module.exports = async function handler(req, res) {
       },
     ],
     generationConfig: {
-      responseMimeType: 'application/json',
+      responseMimeType: 'application/json', // Force JSON output
       maxOutputTokens: 2048,
     },
   };
