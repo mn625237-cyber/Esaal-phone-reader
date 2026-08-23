@@ -3,19 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>مساعد الذكاء الاصطناعي</title>
+  <title>مستخرج رقم الهاتف من الريسيت</title>
   <style>
     :root {
-      --bg: #f3f4f6;
+      --bg: #f0f2f5;
       --surface: #ffffff;
       --primary: #4f46e5;
       --primary-hover: #4338ca;
-      --text: #111827;
+      --success: #059669;
+      --text: #1f2937;
       --muted: #6b7280;
       --border: #e5e7eb;
       --danger: #dc2626;
       --radius: 20px;
-      --shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.1);
     }
 
     * {
@@ -25,7 +27,7 @@
     }
 
     body {
-      font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-family: 'Segoe UI', Tahoma, system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
@@ -38,12 +40,17 @@
 
     .container {
       width: 100%;
-      max-width: 560px;
+      max-width: 520px;
     }
 
     header {
       text-align: center;
       margin: 24px 0 20px;
+    }
+
+    header .logo {
+      font-size: 3rem;
+      margin-bottom: 8px;
     }
 
     header h1 {
@@ -67,6 +74,11 @@
       box-shadow: var(--shadow);
       padding: 20px;
       margin-bottom: 20px;
+      transition: box-shadow 0.2s;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow-lg);
     }
 
     .upload-options {
@@ -92,11 +104,16 @@
       transition: 0.2s;
       text-align: center;
       font-size: 0.95rem;
+      user-select: none;
+    }
+
+    .upload-btn:hover {
+      border-color: var(--primary);
+      background: #eef2ff;
     }
 
     .upload-btn:active {
-      border-color: var(--primary);
-      background: #eef2ff;
+      transform: scale(0.98);
     }
 
     #preview {
@@ -105,11 +122,20 @@
       max-height: 220px;
       border-radius: 12px;
       margin: 12px auto 0;
+      cursor: zoom-in;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    #preview.zoomed {
+      transform: scale(1.8);
+      cursor: zoom-out;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
     }
 
     textarea {
       width: 100%;
-      min-height: 110px;
+      min-height: 100px;
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px;
@@ -117,12 +143,14 @@
       font-size: 0.95rem;
       resize: vertical;
       margin-top: 12px;
+      background: #fafafa;
     }
 
     textarea:focus {
       outline: none;
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+      background: #fff;
     }
 
     .btn {
@@ -196,15 +224,43 @@
       letter-spacing: 0.04em;
     }
 
-    .result-box pre,
-    .history-item pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: 'SFMono-Regular', Consolas, monospace;
-      font-size: 0.9rem;
-      line-height: 1.6;
+    .phone-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #fff;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .phone-display .phone {
+      font-size: 1.5rem;
+      font-weight: 800;
       direction: ltr;
       text-align: left;
+      color: var(--primary);
+    }
+
+    .copy-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
+      border-radius: 8px;
+      transition: 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #eef2ff;
+    }
+
+    .result-notes {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: var(--muted);
     }
 
     .history-header {
@@ -248,6 +304,12 @@
       margin-bottom: 6px;
     }
 
+    .history-item .phone {
+      font-weight: 700;
+      direction: ltr;
+      text-align: left;
+    }
+
     .empty {
       text-align: center;
       color: var(--muted);
@@ -267,12 +329,12 @@
 <body>
   <div class="container">
     <header>
-      <h1>🧠 مساعد الذكاء الاصطناعي</h1>
-      <p>اختر صورة من الكاميرا أو المعرض أو أدخل نصًا</p>
+      <div class="logo">📞</div>
+      <h1>مستخرج رقم الهاتف</h1>
+      <p>استخرج رقم العميل من صورة الريسيت بضغطة زر</p>
     </header>
 
     <main class="card">
-      <!-- خياران واضحان للاختيار -->
       <div class="upload-options">
         <button type="button" id="cameraBtn" class="upload-btn">
           📷 التقاط صورة
@@ -282,24 +344,26 @@
         </button>
       </div>
 
-      <!-- مدخلات الملفات المخفية -->
       <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
       <input type="file" id="galleryInput" accept="image/*" hidden />
 
-      <!-- معاينة الصورة -->
-      <img id="preview" alt="معاينة الصورة" />
+      <img id="preview" alt="معاينة الصورة" title="اضغط للتكبير/التصغير" />
 
-      <textarea id="textInput" placeholder="أو ألصق النص هنا..."></textarea>
+      <textarea id="textInput" placeholder="أو ألصق نص الريسيت هنا (اختياري)"></textarea>
 
       <button id="submitBtn" class="btn">
-        <span id="btnText">معالجة</span>
+        <span id="btnText">استخراج الرقم</span>
       </button>
 
       <div id="message" class="message" role="alert"></div>
 
       <div id="resultBox" class="result-box" style="display: none;">
         <h3>النتيجة</h3>
-        <pre id="resultContent"></pre>
+        <div class="phone-display">
+          <span id="phoneNumber" class="phone"></span>
+          <button id="copyBtn" class="copy-btn" title="نسخ الرقم">📋</button>
+        </div>
+        <div id="resultNotes" class="result-notes"></div>
       </div>
     </main>
 
@@ -316,10 +380,9 @@
 
   <script>
     (function () {
-      const HISTORY_KEY = 'ai_history';
+      const HISTORY_KEY = 'phone_history';
       const MAX_HISTORY = 20;
 
-      // عناصر الواجهة
       const cameraBtn = document.getElementById('cameraBtn');
       const galleryBtn = document.getElementById('galleryBtn');
       const cameraInput = document.getElementById('cameraInput');
@@ -330,12 +393,15 @@
       const btnText = document.getElementById('btnText');
       const messageEl = document.getElementById('message');
       const resultBox = document.getElementById('resultBox');
-      const resultContent = document.getElementById('resultContent');
+      const phoneNumberEl = document.getElementById('phoneNumber');
+      const resultNotesEl = document.getElementById('resultNotes');
+      const copyBtn = document.getElementById('copyBtn');
       const historyList = document.getElementById('historyList');
       const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
       let currentImageDataUrl = null;
       let currentInputType = null;
+      let lastPhone = '';
 
       function showError(msg) {
         messageEl.textContent = msg;
@@ -349,7 +415,7 @@
 
       function setLoading(loading) {
         submitBtn.disabled = loading;
-        btnText.textContent = loading ? 'جارٍ المعالجة...' : 'معالجة';
+        btnText.textContent = loading ? 'جارٍ الاستخراج...' : 'استخراج الرقم';
 
         if (loading) {
           const spinner = document.createElement('span');
@@ -444,13 +510,14 @@
         }
       }
 
-      function saveHistoryItem(result) {
+      function saveHistoryItem(phone, notes) {
         const history = loadHistory();
 
         history.unshift({
           id: Date.now(),
           timestamp: Date.now(),
-          result,
+          phone,
+          notes,
           inputType: currentInputType || 'text',
         });
 
@@ -479,7 +546,8 @@
             return `
               <li class="history-item">
                 <div class="meta">${date} • ${typeLabel}</div>
-                <pre>${escapeHTML(item.result)}</pre>
+                <div class="phone">${escapeHTML(item.phone || '')}</div>
+                <div class="result-notes">${escapeHTML(item.notes || '')}</div>
               </li>
             `;
           })
@@ -492,17 +560,21 @@
       }
 
       function displayResult(text) {
-        let formatted = text;
-
         try {
           const parsed = JSON.parse(text);
-          formatted = JSON.stringify(parsed, null, 2);
-        } catch {
-          // النص ليس JSON، نعرضه كما هو.
-        }
+          const phone = parsed.phone || '';
+          const notes = parsed.notes || '';
 
-        resultContent.textContent = formatted;
-        resultBox.style.display = 'block';
+          lastPhone = phone;
+          phoneNumberEl.textContent = phone;
+          resultNotesEl.textContent = notes;
+          resultBox.style.display = 'block';
+        } catch {
+          // إذا لم تكن النتيجة JSON، نعرضها كنص عادي
+          phoneNumberEl.textContent = 'غير متاح';
+          resultNotesEl.textContent = text;
+          resultBox.style.display = 'block';
+        }
       }
 
       async function handleSubmit() {
@@ -511,7 +583,7 @@
         const text = textInput.value.trim();
 
         if (!currentImageDataUrl && !text) {
-          showError('الرجاء إدخال نص أو اختيار صورة أولاً.');
+          showError('الرجاء اختيار صورة أو إدخال نص أولاً.');
           return;
         }
 
@@ -541,9 +613,16 @@
             throw new Error(data.error || 'حدث خطأ غير متوقع.');
           }
 
-          const result = data.result || 'لا توجد نتيجة.';
+          const result = data.result || '';
           displayResult(result);
-          saveHistoryItem(result);
+
+          // حفظ في السجل
+          try {
+            const parsed = JSON.parse(result);
+            saveHistoryItem(parsed.phone || '', parsed.notes || '');
+          } catch {
+            saveHistoryItem('', result);
+          }
         } catch (err) {
           showError(err.message || 'تعذر الاتصال بالخادم.');
         } finally {
@@ -551,18 +630,23 @@
         }
       }
 
-      // ربط الأزرار بمدخلات الملفات المناسبة
-      cameraBtn.addEventListener('click', () => {
-        cameraInput.click();
-      });
+      function copyPhone() {
+        if (!lastPhone) return;
+        navigator.clipboard.writeText(lastPhone).then(() => {
+          copyBtn.textContent = '✅';
+          setTimeout(() => {
+            copyBtn.textContent = '📋';
+          }, 1500);
+        });
+      }
 
-      galleryBtn.addEventListener('click', () => {
-        galleryInput.click();
-      });
+      // الأحداث
+      cameraBtn.addEventListener('click', () => cameraInput.click());
+      galleryBtn.addEventListener('click', () => galleryInput.click());
 
       cameraInput.addEventListener('change', (e) => {
         handleFile(e.target.files[0]);
-        e.target.value = ''; // إعادة تعيين حتى يمكن اختيار نفس الملف لاحقًا
+        e.target.value = '';
       });
 
       galleryInput.addEventListener('change', (e) => {
@@ -570,7 +654,13 @@
         e.target.value = '';
       });
 
+      // الزوم عند الضغط على الصورة
+      preview.addEventListener('click', () => {
+        preview.classList.toggle('zoomed');
+      });
+
       submitBtn.addEventListener('click', handleSubmit);
+      copyBtn.addEventListener('click', copyPhone);
 
       clearHistoryBtn.addEventListener('click', () => {
         if (confirm('هل تريد مسح السجل بالكامل؟')) {
