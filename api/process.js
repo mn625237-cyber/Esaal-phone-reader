@@ -1,146 +1,186 @@
-// api/process.js
-// Vercel Serverless Function — Google Gemini API (stable v1)
-// Key is read from process.env.GEMINI_API_KEY and never exposed to the frontend.
-
-const AI_MODEL = 'gemini-3.6-flash';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1/models/${AI_MODEL}:generateContent`;
-
-// ✏️ برومبت مخصص لاستخراج رقم الهاتف من ريسيت مصري
-const AI_PROMPT = `You are reading a photo of an Egyptian restaurant delivery receipt. Find the customer's mobile phone number. 
-Egyptian mobile numbers start with 01 and have exactly 11 digits total (e.g. 01012345678). 
-They may appear with a +20 country code, spaces, or dashes, or may be duplicated in different formats on the same receipt. 
-If several phone-like numbers appear, prefer the one nearest "Customer Information" or the delivery address, not a restaurant hotline or order number. 
-Return ONLY valid JSON in this exact format:
-{
-  "phone": "01XXXXXXXXX",
-  "notes": "Any additional notes or alternate numbers found"
-}`;
-
-/**
- * Extract MIME type and Base64 data from a Data URL.
- */
-function parseImageDataUrl(dataUrl) {
-  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
-  if (!match) {
-    return null;
-  }
-
-  let mimeType = match[1];
-  if (mimeType === 'image/jpg') {
-    mimeType = 'image/jpeg';
-  }
-
-  return {
-    mimeType,
-    base64Data: match[2],
-  };
-}
-
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed. Use POST.' });
-    return;
-  }
-
-  if (!process.env.GEMINI_API_KEY) {
-    res.status(500).json({ error: 'Server missing GEMINI_API_KEY environment variable.' });
-    return;
-  }
-
-  let payload = req.body;
-  if (typeof payload === 'string') {
-    try {
-      payload = JSON.parse(payload);
-    } catch {
-      res.status(400).json({ error: 'Invalid JSON body.' });
-      return;
-    }
-  }
-
-  const { image, text } = payload || {};
-
-  if (!image && !text) {
-    res.status(400).json({ error: 'Please provide an image or text.' });
-    return;
-  }
-
-  const parts = [];
-
-  if (text) {
-    parts.push({
-      text: `Here is the provided text:\n\n${text}`,
+export default async function handler(req, res) {
+  // السماح بطلبات POST فقط
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Method not allowed"
     });
   }
-
-  if (image) {
-    const parsedImage = parseImageDataUrl(image);
-
-    if (!parsedImage) {
-      res.status(400).json({ error: 'Invalid image Data URL.' });
-      return;
-    }
-
-    parts.push({
-      inlineData: {
-        mimeType: parsedImage.mimeType,
-        data: parsedImage.base64Data,
-      },
-    });
-  }
-
-  parts.push({
-    text: AI_PROMPT,
-  });
-
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts,
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      maxOutputTokens: 2048,
-    },
-  };
 
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "Gemini API key is missing"
+      });
+    }
+
+    const {
+      imageBase64,
+      mimeType
+    } = req.body;
+
+
+    if (!imageBase64) {
+      return res.status(400).json({
+        error: "No image received"
+      });
+    }
+
+
+    const prompt = `
+أنت نظام متخصص في قراءة إيصالات توصيل المطاعم المصرية.
+
+مهمتك:
+اقرأ صورة إيصال الطلب وابحث عن رقم هاتف العميل.
+
+القواعد:
+- الرقم المطلوب هو رقم موبايل مصري.
+- يجب أن يبدأ بـ 01.
+- يجب أن يكون بالضبط 11 رقم.
+- ابحث بالقرب من:
+  Customer Information
+  Customer Info
+  Delivery Address
+  Phone
+  Mobile
+  Tel
+
+إذا وجدت أكثر من رقم:
+اختر رقم العميل وليس رقم المطعم أو السائق.
+
+أعد النتيجة فقط بصيغة JSON بدون أي شرح:
+
+إذا وجدت الرقم:
+{
+ "phone":"01XXXXXXXXX"
+}
+
+إذا لم تجد:
+{
+ "phone":null
+}
+
+لا تضف أي نص خارج JSON.
+`;
+
+
     const response = await fetch(
-      `${GEMINI_ENDPOINT}?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`,
+      "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
         },
-        body: JSON.stringify(requestBody),
+
+        body: JSON.stringify({
+
+          contents: [
+            {
+              parts: [
+
+                {
+                  text: prompt
+                },
+
+                {
+                  inlineData: {
+                    mimeType: mimeType || "image/jpeg",
+                    data: imageBase64
+                  }
+                }
+
+              ]
+            }
+          ],
+
+
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0
+          }
+
+        })
       }
     );
 
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const message =
-        errorData.error?.message ||
-        errorData.message ||
-        'Gemini API request failed.';
-      res.status(response.status).json({ error: message });
-      return;
+
+      const errorText = await response.text();
+
+      console.error(errorText);
+
+      return res.status(500).json({
+        error: "Gemini API failed"
+      });
     }
 
-    const data = await response.json();
-    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    res.status(200).json({ result });
+    const result = await response.json();
+
+
+    let text =
+      result?.candidates?.[0]
+      ?.content
+      ?.parts?.[0]
+      ?.text;
+
+
+    if (!text) {
+
+      return res.json({
+        phone: null
+      });
+
+    }
+
+
+    let parsed;
+
+
+    try {
+
+      parsed = JSON.parse(text);
+
+    } catch {
+
+      parsed = {
+        phone: null
+      };
+
+    }
+
+
+
+    let phone = parsed.phone;
+
+
+    // تحقق إضافي من الرقم
+    if (
+      typeof phone !== "string" ||
+      !/^01\d{9}$/.test(phone)
+    ) {
+
+      phone = null;
+
+    }
+
+
+    return res.status(200).json({
+      phone
+    });
+
+
+
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Internal server error.' });
+
+    console.error(error);
+
+    return res.status(500).json({
+      error: "Server error"
+    });
+
   }
-};
+}
