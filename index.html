@@ -69,30 +69,34 @@
       margin-bottom: 20px;
     }
 
-    .drop-zone {
+    .upload-options {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .upload-btn {
+      flex: 1;
+      min-width: 140px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 16px;
       border: 2px dashed #c7c9d1;
-      border-radius: 16px;
-      padding: 24px;
-      text-align: center;
+      border-radius: 14px;
+      background: #fafafa;
+      font-weight: 600;
       cursor: pointer;
       transition: 0.2s;
-      background: #fafafa;
+      text-align: center;
+      font-size: 0.95rem;
     }
 
-    .drop-zone:active,
-    .drop-zone.dragover {
+    .upload-btn:active {
       border-color: var(--primary);
       background: #eef2ff;
-    }
-
-    .drop-zone .icon {
-      font-size: 2rem;
-    }
-
-    .drop-zone p {
-      color: var(--muted);
-      margin-top: 8px;
-      font-size: 0.9rem;
     }
 
     #preview {
@@ -264,15 +268,25 @@
   <div class="container">
     <header>
       <h1>🧠 مساعد الذكاء الاصطناعي</h1>
-      <p>ارفع صورة أو أدخل نصًا وسيتولى الذكاء الاصطناعي المهمة</p>
+      <p>اختر صورة من الكاميرا أو المعرض أو أدخل نصًا</p>
     </header>
 
     <main class="card">
-      <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="رفع صورة">
-        <div class="icon">📷</div>
-        <p>اضغط لاختيار صورة أو التقط صورة بالكاميرا</p>
-        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
+      <!-- خياران واضحان للاختيار -->
+      <div class="upload-options">
+        <button type="button" id="cameraBtn" class="upload-btn">
+          📷 التقاط صورة
+        </button>
+        <button type="button" id="galleryBtn" class="upload-btn">
+          🖼️ اختيار من المعرض
+        </button>
       </div>
+
+      <!-- مدخلات الملفات المخفية -->
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
+      <input type="file" id="galleryInput" accept="image/*" hidden />
+
+      <!-- معاينة الصورة -->
       <img id="preview" alt="معاينة الصورة" />
 
       <textarea id="textInput" placeholder="أو ألصق النص هنا..."></textarea>
@@ -297,7 +311,7 @@
       <ul id="historyList" class="history-list"></ul>
     </section>
 
-    <footer>تعمل هذه الأداة عبر Vercel Serverless + OpenAI</footer>
+    <footer>تعمل هذه الأداة عبر Vercel Serverless + Gemini</footer>
   </div>
 
   <script>
@@ -305,8 +319,11 @@
       const HISTORY_KEY = 'ai_history';
       const MAX_HISTORY = 20;
 
-      const dropZone = document.getElementById('dropZone');
-      const fileInput = document.getElementById('fileInput');
+      // عناصر الواجهة
+      const cameraBtn = document.getElementById('cameraBtn');
+      const galleryBtn = document.getElementById('galleryBtn');
+      const cameraInput = document.getElementById('cameraInput');
+      const galleryInput = document.getElementById('galleryInput');
       const preview = document.getElementById('preview');
       const textInput = document.getElementById('textInput');
       const submitBtn = document.getElementById('submitBtn');
@@ -494,7 +511,7 @@
         const text = textInput.value.trim();
 
         if (!currentImageDataUrl && !text) {
-          showError('الرجاء إدخال نص أو رفع صورة أولاً.');
+          showError('الرجاء إدخال نص أو اختيار صورة أولاً.');
           return;
         }
 
@@ -534,37 +551,23 @@
         }
       }
 
-      dropZone.addEventListener('click', () => fileInput.click());
-
-      dropZone.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          fileInput.click();
-        }
+      // ربط الأزرار بمدخلات الملفات المناسبة
+      cameraBtn.addEventListener('click', () => {
+        cameraInput.click();
       });
 
-      fileInput.addEventListener('change', (e) => {
+      galleryBtn.addEventListener('click', () => {
+        galleryInput.click();
+      });
+
+      cameraInput.addEventListener('change', (e) => {
+        handleFile(e.target.files[0]);
+        e.target.value = ''; // إعادة تعيين حتى يمكن اختيار نفس الملف لاحقًا
+      });
+
+      galleryInput.addEventListener('change', (e) => {
         handleFile(e.target.files[0]);
         e.target.value = '';
-      });
-
-      ['dragenter', 'dragover'].forEach((evt) => {
-        dropZone.addEventListener(evt, (e) => {
-          e.preventDefault();
-          dropZone.classList.add('dragover');
-        });
-      });
-
-      ['dragleave', 'drop'].forEach((evt) => {
-        dropZone.addEventListener(evt, (e) => {
-          e.preventDefault();
-          dropZone.classList.remove('dragover');
-        });
-      });
-
-      dropZone.addEventListener('drop', (e) => {
-        const file = e.dataTransfer.files[0];
-        if (file) handleFile(file);
       });
 
       submitBtn.addEventListener('click', handleSubmit);
