@@ -1,11 +1,10 @@
 // api/process.js
-// Vercel Serverless Function - تتواصل مع Google Gemini بشكل آمن.
-// مفتاح API يُقرأ من process.env.GEMINI_API_KEY ولا يظهر أبدًا في الواجهة.
+// Vercel Serverless Function — Google Gemini API (stable v1)
+// Key is read from process.env.GEMINI_API_KEY and never exposed to the frontend.
 
-const AI_MODEL = 'gemini-1.5-flash';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent`;
+const AI_MODEL = 'gemini-2.0-flash'; // يمكنك استخدام 'gemini-1.5-flash' إذا أردت
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1/models/${AI_MODEL}:generateContent`;
 
-// ✏️ نفس البرومبت السابق: ترجمة قوائم الطعام إلى JSON.
 const AI_PROMPT = `You are a helpful menu translator.
 Extract all menu items from the provided image or text.
 Translate each item into English if it is in another language.
@@ -21,23 +20,24 @@ Return ONLY valid JSON in this exact format:
   "notes": "Any additional notes"
 }`;
 
-/**
- * استخراج نوع الصورة وبيانات Base64 من Data URL.
- * مثال: data:image/jpeg;base64,/9j/4AAQ...
- */
 function parseImageDataUrl(dataUrl) {
-  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s);
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
   if (!match) {
     return null;
   }
+
+  let mimeType = match[1];
+  if (mimeType === 'image/jpg') {
+    mimeType = 'image/jpeg';
+  }
+
   return {
-    mimeType: match[1],
+    mimeType,
     base64Data: match[2],
   };
 }
 
 module.exports = async function handler(req, res) {
-  // CORS headers (مفيدة للتطوير المحلي)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -58,7 +58,6 @@ module.exports = async function handler(req, res) {
   }
 
   let payload = req.body;
-
   if (typeof payload === 'string') {
     try {
       payload = JSON.parse(payload);
@@ -75,7 +74,6 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // تجهيز أجزاء المحتوى المرسلة إلى Gemini
   const parts = [];
 
   if (text) {
@@ -93,14 +91,13 @@ module.exports = async function handler(req, res) {
     }
 
     parts.push({
-      inline_data: {
-        mime_type: parsedImage.mimeType,
+      inlineData: {
+        mimeType: parsedImage.mimeType,
         data: parsedImage.base64Data,
       },
     });
   }
 
-  // إضافة البرومبت كنص
   parts.push({
     text: AI_PROMPT,
   });
@@ -113,31 +110,35 @@ module.exports = async function handler(req, res) {
       },
     ],
     generationConfig: {
-      response_mime_type: 'application/json', // فرض مخرجات JSON
+      responseMimeType: 'application/json',
       maxOutputTokens: 2048,
     },
   };
 
   try {
-    const response = await fetch(`${GEMINI_ENDPOINT}?key=${process.env.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+    const response = await fetch(
+      `${GEMINI_ENDPOINT}?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      res.status(response.status).json({
-        error: errorData.error?.message || 'Gemini API request failed.',
-      });
+      const message =
+        errorData.error?.message ||
+        errorData.message ||
+        'Gemini API request failed.';
+      res.status(response.status).json({ error: message });
       return;
     }
 
     const data = await response.json();
 
-    // استخراج النص من أول مرشح
     const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     res.status(200).json({ result });
