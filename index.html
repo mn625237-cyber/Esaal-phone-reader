@@ -96,14 +96,29 @@
     transition: background .15s ease, transform .1s ease;
   }
   .btn-primary:active{ background: var(--stamp-dark); transform: scale(.98); }
+  
   .preview-wrap{
     margin-top: 16px;
     border-radius: 8px;
     overflow: hidden;
     border: 1px solid var(--line);
     max-height: 200px;
+    /* Zoom styles added here */
+    cursor: zoom-in;
+    transition: max-height 0.3s ease;
   }
-  .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; }
+  .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; transition: max-height 0.3s ease; }
+  
+  /* Zoom Active Classes */
+  .preview-wrap.expanded {
+    max-height: 85vh;
+    cursor: zoom-out;
+  }
+  .preview-wrap.expanded img {
+    max-height: 85vh;
+    object-fit: contain;
+  }
+
   .status{
     margin-top: 14px;
     font-size: 14px;
@@ -258,7 +273,7 @@
         <button class="btn-primary" id="cameraBtn">📷 صوّر دلوقتي</button>
         <button class="btn-primary btn-alt" id="galleryBtn">🖼 اختار من المعرض</button>
       </div>
-      <div class="preview-wrap" id="previewWrap" hidden>
+      <div class="preview-wrap" id="previewWrap" title="اضغط لتكبير أو تصغير الصورة" hidden>
         <img id="previewImg" alt="صورة الريسيت">
       </div>
       <div class="status" id="statusText" hidden></div>
@@ -476,6 +491,9 @@ async function handleFile(inputEl){
   const file = inputEl.files[0];
   if (!file) return;
 
+  // عند رفع صورة جديدة نلغي التكبير لو كان شغال
+  els.previewWrap.classList.remove('expanded');
+  
   els.resultCard.hidden = true;
   els.previewWrap.hidden = false;
   els.previewImg.src = URL.createObjectURL(file);
@@ -538,6 +556,11 @@ els.clearBtn.addEventListener('click', async () => {
   showToast('اتمسح الكل');
 });
 
+// ---------- Zoom Image on Click ----------
+els.previewWrap.addEventListener('click', () => {
+  els.previewWrap.classList.toggle('expanded');
+});
+
 // ---------- init ----------
 (async () => {
   log = await loadLog();
@@ -546,4 +569,3 @@ els.clearBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
-
