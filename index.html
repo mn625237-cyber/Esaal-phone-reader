@@ -35,7 +35,7 @@
   .app{ max-width: 480px; margin: 0 auto; }
 
   /* ---------- header ---------- */
-  .app-header{ text-align:center; margin-bottom: 22px; }
+  .app-header{ text-align:center; margin-bottom: 22px; position: relative; }
   .stamp-logo{
     display:inline-block;
     font-family:'Cairo', sans-serif;
@@ -169,6 +169,39 @@
   }
   .result-actions .btn-primary{ flex: 1; }
 
+  .field-title{ display:block; margin-top:16px; font-size:12.5px; }
+  .addr-row{ display:flex; gap:8px; }
+  .meta-row{ display:flex; flex-direction:column; gap:8px; }
+  .field-input{
+    width:100%; direction:ltr; text-align:center;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:14px;
+    color: var(--ink); border:none; border-bottom:2px solid #D8D1BE;
+    background:transparent; padding:8px 6px; outline:none;
+  }
+  .field-input:focus{ border-bottom-color: var(--stamp); }
+  .meta-select{
+    font-family:'Cairo',sans-serif; direction:rtl; text-align:right; font-weight:700; font-size:14px;
+  }
+
+  .order-preview{
+    margin-top:16px; padding:12px 14px; border-radius:10px;
+    background: var(--paper-2); border:1px dashed #C9C1AE;
+    font-family:'JetBrains Mono', monospace; font-size:14px; line-height:1.7;
+    direction:ltr; text-align:left; white-space:pre-line; color: var(--ink);
+  }
+
+  .btn-wa{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    background:#25D366; color:#fff; text-decoration:none;
+    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+  }
+  .btn-wa.disabled{ pointer-events:none; opacity:.5; }
+  .btn-copy{
+    flex:1; background:transparent; border:2px solid #D8D1BE; color: var(--ink-soft);
+    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    cursor:pointer;
+  }
+
   @media (prefers-reduced-motion: reduce){
     .phone-input{ transition: none; }
     .spinner{ animation: none; border-top-color: var(--ink-soft); }
@@ -211,6 +244,9 @@
     display:block; margin-top:2px;
     font-family:'JetBrains Mono', monospace;
     font-size: 11px; color: var(--text-soft); font-weight: 500;
+  }
+  .log-meta{
+    display:block; margin-top:2px; font-size: 11.5px; color: var(--highlighter); font-weight:600;
   }
   .log-actions{ display:flex; gap:6px; }
   .icon-btn{
@@ -329,9 +365,30 @@
         <span class="alt-label">أرقام تانية اتلاقت في نفس الصورة:</span>
         <div class="alt-chips" id="altChips"></div>
       </div>
+
+      <label class="result-label field-title">العنوان (عمارة | دور | شقة)</label>
+      <div class="addr-row">
+        <input type="text" id="addrBuilding" class="field-input" inputmode="numeric" placeholder="عمارة">
+        <input type="text" id="addrFloor" class="field-input" inputmode="numeric" placeholder="دور">
+        <input type="text" id="addrApt" class="field-input" inputmode="numeric" placeholder="شقة">
+      </div>
+
+      <label class="result-label field-title">المطعم / المنطقة / الدفع</label>
+      <div class="meta-row">
+        <select id="restaurantSelect" class="field-input meta-select"></select>
+        <input type="text" id="areaTextInput" class="field-input" placeholder="المنطقة">
+        <input type="text" id="paymentTextInput" class="field-input" placeholder="فيزا أو 247ج">
+      </div>
+
+      <div class="order-preview" id="orderPreview"></div>
+
       <div class="result-actions">
-        <button class="btn-primary" id="saveBtn">💾 حفظ الرقم</button>
+        <button class="btn-primary" id="saveBtn">💾 حفظ الأوردر</button>
         <button class="btn-ghost" id="discardBtn">إلغاء</button>
+      </div>
+      <div class="result-actions">
+        <a class="btn-small btn-wa" id="waBtn" target="_blank" rel="noopener">💬 واتساب العميل</a>
+        <button class="btn-copy" id="copyOrderBtn">📋 نسخ الأوردر</button>
       </div>
     </section>
 
@@ -361,6 +418,7 @@
 
 <script>
 const STORAGE_KEY = 'phone-log';
+const RESTAURANTS_KEY = 'restaurant-list';
 
 const els = {
   fileInputCamera: document.getElementById('fileInputCamera'),
@@ -384,6 +442,15 @@ const els = {
   resultHint: document.getElementById('resultHint'),
   altWrap: document.getElementById('altWrap'),
   altChips: document.getElementById('altChips'),
+  addrBuilding: document.getElementById('addrBuilding'),
+  addrFloor: document.getElementById('addrFloor'),
+  addrApt: document.getElementById('addrApt'),
+  restaurantSelect: document.getElementById('restaurantSelect'),
+  areaTextInput: document.getElementById('areaTextInput'),
+  paymentTextInput: document.getElementById('paymentTextInput'),
+  orderPreview: document.getElementById('orderPreview'),
+  waBtn: document.getElementById('waBtn'),
+  copyOrderBtn: document.getElementById('copyOrderBtn'),
   saveBtn: document.getElementById('saveBtn'),
   discardBtn: document.getElementById('discardBtn'),
   logCount: document.getElementById('logCount'),
@@ -397,6 +464,16 @@ const els = {
 };
 
 let log = [];
+let restaurants = ['اما'];
+let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
+
+// escapes any text before it's injected via innerHTML — applies to anything
+// that came from Gemini's read of a photo, or from a user-typed field
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
 
 // ---------- storage (plain browser localStorage — works on any real website) ----------
 async function loadLog(){
@@ -417,6 +494,18 @@ async function saveLog(){
   }
 }
 
+function loadRestaurants(){
+  try{
+    const raw = localStorage.getItem(RESTAURANTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  }catch(e){}
+  return ['اما'];
+}
+function saveRestaurants(){
+  try{ localStorage.setItem(RESTAURANTS_KEY, JSON.stringify(restaurants)); }catch(e){}
+}
+
 // ---------- toast ----------
 let toastTimer;
 function showToast(msg){
@@ -426,12 +515,40 @@ function showToast(msg){
   toastTimer = setTimeout(()=> els.toast.classList.remove('show'), 1800);
 }
 
-// ---------- render log ----------
+// ---------- restaurant dropdown ----------
+function renderRestaurantOptions(selected){
+  const options = restaurants.map(r =>
+    `<option value="${escapeHTML(r)}" ${r === selected ? 'selected' : ''}>${escapeHTML(r)}</option>`
+  ).join('');
+  els.restaurantSelect.innerHTML = options + `<option value="__new__">+ مطعم جديد</option>`;
+}
+els.restaurantSelect.addEventListener('change', () => {
+  if (els.restaurantSelect.value === '__new__'){
+    const name = prompt('اسم المطعم الجديد؟');
+    if (name && name.trim()){
+      restaurants.push(name.trim());
+      saveRestaurants();
+      renderRestaurantOptions(name.trim());
+    }else{
+      renderRestaurantOptions(restaurants[0]);
+    }
+  }
+  updateOrderPreview();
+});
+
+// ---------- log rendering ----------
 function formatTime(iso){
   try{
     return new Intl.DateTimeFormat('ar-EG', { dateStyle:'short', timeStyle:'short' }).format(new Date(iso));
   }catch(e){ return ''; }
 }
+
+function orderLinesFromEntry(entry){
+  const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
+  const line3 = [entry.restaurant, entry.area, entry.payment].filter(Boolean).join(' ');
+  return [entry.phone || '', address, line3]; // always exactly 3 lines, even if some are empty
+}
+
 function renderLog(){
   els.logCount.textContent = log.length;
   els.exportBar.hidden = log.length === 0;
@@ -440,11 +557,24 @@ function renderLog(){
   log.forEach((entry, i) => {
     const li = document.createElement('li');
     li.className = 'log-row';
+    const safePhone = escapeHTML(entry.phone);
+    const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
+    const metaParts = [];
+    if (entry.restaurant) metaParts.push(escapeHTML(entry.restaurant));
+    if (entry.area) metaParts.push(escapeHTML(entry.area));
+    if (entry.payment) metaParts.push(escapeHTML(entry.payment));
+    if (address) metaParts.push(`🏠 ${escapeHTML(address)}`);
+    const metaLine = metaParts.length ? `<span class="log-meta">${metaParts.join(' • ')}</span>` : '';
+    const waHref = /^01\d{9}$/.test(entry.phone || '')
+      ? `https://wa.me/20${entry.phone.slice(1)}?text=${encodeURIComponent(orderLinesFromEntry(entry).join('\n'))}`
+      : '';
     li.innerHTML = `
-      <div class="log-phone">${entry.phone}<span class="log-time">${formatTime(entry.savedAt)}</span></div>
+      <div class="log-phone">${safePhone}<span class="log-time">${formatTime(entry.savedAt)}</span>${metaLine}</div>
       <div class="log-actions">
-        <a class="icon-btn" href="tel:${entry.phone}" title="اتصال">📞</a>
-        <button class="icon-btn" data-copy="${i}" title="نسخ">📋</button>
+        ${waHref ? `<a class="icon-btn" href="${waHref}" target="_blank" rel="noopener" title="واتساب">💬</a>` : ''}
+        <a class="icon-btn" href="tel:${safePhone}" title="اتصال">📞</a>
+        <button class="icon-btn" data-edit="${i}" title="تعديل">✏️</button>
+        <button class="icon-btn" data-copy-order="${i}" title="نسخ الأوردر كامل">📄</button>
         <button class="icon-btn danger" data-del="${i}" title="حذف">✕</button>
       </div>`;
     els.logList.appendChild(li);
@@ -452,24 +582,35 @@ function renderLog(){
 }
 
 els.logList.addEventListener('click', async (e) => {
-  const copyIdx = e.target.closest('[data-copy]');
+  const copyOrderIdx = e.target.closest('[data-copy-order]');
   const delIdx = e.target.closest('[data-del]');
-  if (copyIdx){
-    const entry = log[Number(copyIdx.dataset.copy)];
-    await navigator.clipboard.writeText(entry.phone);
-    showToast('اتنسخ ✅');
+  const editIdx = e.target.closest('[data-edit]');
+  if (copyOrderIdx){
+    const entry = log[Number(copyOrderIdx.dataset.copyOrder)];
+    await navigator.clipboard.writeText(orderLinesFromEntry(entry).join('\n'));
+    showToast('اتنسخ الأوردر ✅');
+  }
+  if (editIdx){
+    openEditEntry(Number(editIdx.dataset.edit));
   }
   if (delIdx){
     if (!confirm('تمسح الرقم ده؟')) return;
+    const wasEditing = editingIndex === Number(delIdx.dataset.del);
     log.splice(Number(delIdx.dataset.del), 1);
     await saveLog();
     renderLog();
+    if (wasEditing){
+      els.resultCard.hidden = true;
+      els.previewWrap.hidden = true;
+      editingIndex = null;
+      els.saveBtn.textContent = '💾 حفظ الأوردر';
+    }
     showToast('اتمسح');
   }
 });
 
-// ---------- image resize (keeps upload small/fast on mobile data) ----------
-function resizeImageToBase64(file, maxDim = 1600, quality = 0.85){
+// ---------- image resize (keeps upload small/fast on mobile data — phone-only extraction doesn't need a huge image) ----------
+function resizeImageToBase64(file, maxDim = 1100, quality = 0.75){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('read failed'));
@@ -493,7 +634,7 @@ function resizeImageToBase64(file, maxDim = 1600, quality = 0.85){
   });
 }
 
-// ---------- OCR (Gemini Flash, called through our own /api route so the key stays hidden) ----------
+// ---------- OCR (Gemini Flash-Lite, called through our own /api route so the key stays hidden) ----------
 async function extractPhone(base64Image){
   const response = await fetch('/api/extract-phone', {
     method: 'POST',
@@ -502,7 +643,7 @@ async function extractPhone(base64Image){
   });
   if (!response.ok) throw new Error('api-failed');
   const data = await response.json();
-  return { phone: data.phone || null, alternates: data.alternates || [] };
+  return { phone: data.phone || null, alternates: [] };
 }
 
 function setStatus(msg, isError=false){
@@ -519,12 +660,52 @@ function renderAlternates(list){
     chip.type = 'button';
     chip.className = 'chip';
     chip.textContent = num;
-    chip.addEventListener('click', () => { els.phoneInput.value = num; });
+    chip.addEventListener('click', () => { els.phoneInput.value = num; updateOrderPreview(); });
     els.altChips.appendChild(chip);
   });
 }
 
+function buildOrderLines(){
+  const phone = els.phoneInput.value.trim();
+  const building = els.addrBuilding.value.trim();
+  const floor = els.addrFloor.value.trim();
+  const apt = els.addrApt.value.trim();
+  const address = [building, floor, apt].filter(Boolean).join(' ');
+  const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
+  const area = els.areaTextInput.value.trim();
+  const payment = els.paymentTextInput.value.trim();
+  const line3 = [restaurant, area, payment].filter(Boolean).join(' ');
+  return [phone, address, line3]; // always exactly 3 lines, even if some are empty
+}
+
+function updateOrderPreview(){
+  const lines = buildOrderLines();
+  els.orderPreview.textContent = lines.join('\n');
+  const phone = els.phoneInput.value.trim();
+  if (/^01\d{9}$/.test(phone)){
+    const message = encodeURIComponent(lines.join('\n'));
+    els.waBtn.href = `https://wa.me/20${phone.slice(1)}?text=${message}`;
+    els.waBtn.classList.remove('disabled');
+  }else{
+    els.waBtn.removeAttribute('href');
+    els.waBtn.classList.add('disabled');
+  }
+}
+
+
+[els.phoneInput, els.addrBuilding, els.addrFloor, els.addrApt, els.areaTextInput, els.paymentTextInput]
+  .forEach(el => el.addEventListener('input', updateOrderPreview));
+
+els.copyOrderBtn.addEventListener('click', async () => {
+  const lines = buildOrderLines();
+  if (!lines.some(l => l !== '')){ showToast('مفيش بيانات تتنسخ'); return; }
+  await navigator.clipboard.writeText(lines.join('\n'));
+  showToast('اتنسخ الأوردر ✅');
+});
+
 function openResult(phone, alternates = []){
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
   els.resultCard.hidden = false;
   els.phoneInput.value = phone || '';
   els.resultHint.textContent = phone
@@ -536,6 +717,44 @@ function openResult(phone, alternates = []){
     void els.phoneInput.offsetWidth;
     els.phoneInput.classList.add('revealed');
   });
+
+  els.addrBuilding.value = '';
+  els.addrFloor.value = '';
+  els.addrApt.value = '';
+  renderRestaurantOptions(restaurants[0]);
+  els.areaTextInput.value = '';
+  els.paymentTextInput.value = '';
+  updateOrderPreview();
+
+  els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function openEditEntry(i){
+  const entry = log[i];
+  if (!entry) return;
+  editingIndex = i;
+  els.saveBtn.textContent = '💾 حفظ التعديل';
+  els.batchCard.hidden = true;
+  els.previewWrap.hidden = true;
+  els.resultCard.hidden = false;
+
+  els.phoneInput.value = entry.phone || '';
+  els.resultHint.textContent = 'بتعدّل أوردر محفوظ — احفظ لما تخلص';
+  renderAlternates([]);
+  els.phoneInput.classList.add('revealed');
+
+  els.addrBuilding.value = entry.building || '';
+  els.addrFloor.value = entry.floor || '';
+  els.addrApt.value = entry.apt || '';
+  if (entry.restaurant && !restaurants.includes(entry.restaurant)){
+    restaurants.push(entry.restaurant);
+    saveRestaurants();
+  }
+  renderRestaurantOptions(entry.restaurant || restaurants[0]);
+  els.areaTextInput.value = entry.area || '';
+  els.paymentTextInput.value = entry.payment || '';
+  updateOrderPreview();
+
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -589,7 +808,7 @@ els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src))
 els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
 els.lightboxClose.addEventListener('click', () => { els.lightbox.hidden = true; });
 
-// ---------- batch mode (multiple gallery photos at once) ----------
+// ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
 let batchState = [];
 
 async function handleBatch(files){
@@ -602,7 +821,7 @@ async function handleBatch(files){
 
   for (let i = 0; i < batchState.length; i++){
     batchState[i].status = 'loading';
-    renderBatch();
+    updateBatchRow(i);
     try{
       const base64 = await resizeImageToBase64(batchState[i].file);
       const { phone } = await extractPhone(base64);
@@ -611,21 +830,35 @@ async function handleBatch(files){
     }catch(err){
       batchState[i].status = 'error';
     }
-    renderBatch();
+    updateBatchRow(i);
   }
 }
 
-function renderBatch(){
+function batchRowHTML(item, i){
   const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: 'حصلت مشكلة في القراءة' };
-  els.batchList.innerHTML = batchState.map((item, i) => `
-    <li class="batch-item">
+  return `
+    <li class="batch-item" data-row="${i}">
       <img class="batch-thumb" src="${item.thumb}" data-idx="${i}">
       <div class="batch-item-body">
         <input type="tel" class="batch-phone-input" inputmode="numeric" maxlength="14"
-               data-idx="${i}" value="${item.phone}" placeholder="01xxxxxxxxx">
+               data-idx="${i}" value="${escapeHTML(item.phone)}" placeholder="01xxxxxxxxx">
         <span class="batch-status ${item.status === 'error' ? 'error' : ''}">${labels[item.status] || ''}</span>
       </div>
-    </li>`).join('');
+    </li>`;
+}
+
+function renderBatch(){
+  els.batchList.innerHTML = batchState.map((item, i) => batchRowHTML(item, i)).join('');
+}
+
+// updates a single row in place (used while a batch is processing) so typing
+// in a different row isn't interrupted by a full list rebuild
+function updateBatchRow(i){
+  const rowEl = els.batchList.querySelector(`li[data-row="${i}"]`);
+  if (!rowEl){ renderBatch(); return; }
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = batchRowHTML(batchState[i], i).trim();
+  rowEl.replaceWith(wrapper.firstElementChild);
 }
 
 els.batchList.addEventListener('click', (e) => {
@@ -642,12 +875,17 @@ els.batchList.addEventListener('input', (e) => {
 els.batchSaveBtn.addEventListener('click', async () => {
   const valid = batchState.filter(b => b.phone);
   if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
-  valid.forEach(b => log.unshift({ phone: b.phone, savedAt: new Date().toISOString() }));
+  valid.forEach(b => log.unshift({
+    phone: b.phone,
+    savedAt: new Date().toISOString(),
+    building: null, floor: null, apt: null,
+    restaurant: null, area: null, payment: null,
+  }));
   await saveLog();
   renderLog();
   els.batchCard.hidden = true;
   batchState = [];
-  showToast(`اتحفظ ${valid.length} رقم ✅`);
+  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة بعدين من نسخ الأوردر`);
 });
 
 els.batchDiscardBtn.addEventListener('click', () => {
@@ -672,7 +910,24 @@ els.saveBtn.addEventListener('click', async () => {
     showToast('اكتب الرقم الأول');
     return;
   }
-  log.unshift({ phone, savedAt: new Date().toISOString() });
+  const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
+  const entryData = {
+    phone,
+    savedAt: (editingIndex !== null && log[editingIndex]) ? log[editingIndex].savedAt : new Date().toISOString(),
+    building: els.addrBuilding.value.trim() || null,
+    floor: els.addrFloor.value.trim() || null,
+    apt: els.addrApt.value.trim() || null,
+    restaurant: restaurant || null,
+    area: els.areaTextInput.value.trim() || null,
+    payment: els.paymentTextInput.value.trim() || null,
+  };
+  if (editingIndex !== null && log[editingIndex]){
+    log[editingIndex] = entryData;
+  }else{
+    log.unshift(entryData);
+  }
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
   await saveLog();
   renderLog();
   els.resultCard.hidden = true;
@@ -683,6 +938,8 @@ els.saveBtn.addEventListener('click', async () => {
 els.discardBtn.addEventListener('click', () => {
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
 });
 
 els.copyAllBtn.addEventListener('click', async () => {
@@ -692,7 +949,9 @@ els.copyAllBtn.addEventListener('click', async () => {
 });
 
 els.csvBtn.addEventListener('click', () => {
-  const rows = ['الرقم,التاريخ', ...log.map(e => `${e.phone},${formatTime(e.savedAt)}`)];
+  const rows = ['الرقم,التاريخ,عمارة,دور,شقة,المطعم,المنطقة,الدفع', ...log.map(e =>
+    `${e.phone},${formatTime(e.savedAt)},${e.building || ''},${e.floor || ''},${e.apt || ''},${e.restaurant || ''},${e.area || ''},${e.payment || ''}`
+  )];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -712,6 +971,7 @@ els.clearBtn.addEventListener('click', async () => {
 (async () => {
   log = await loadLog();
   renderLog();
+  restaurants = loadRestaurants();
 })();
 </script>
 </body>
