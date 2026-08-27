@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Scanly 🛵 — قراءة أرقام الريسيتات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #1E1C18;
+    --bg-2: #28251F;
+    --bg-3: #322E26;
+    --paper: #FBF8F1;
+    --paper-2: #F1ECDF;
+    --ink: #2A2620;
+    --ink-soft: #7A7267;
+    --stamp: #C23B22;
+    --stamp-dark: #9C2E19;
+    --highlighter: #F6C445;
+    --text-hi: #F3EEE1;
+    --text-soft: #B7AF9F;
+    --line: #45403635;
+    --nav-h: 76px;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; padding:0; overflow-x:hidden; max-width:100vw; }
+  body{
+    background: radial-gradient(ellipse at top, var(--bg-3), var(--bg) 70%);
+    color: var(--text-hi);
+    font-family: 'Cairo', sans-serif;
+    min-height: 100vh;
+    padding: 16px 14px calc(var(--nav-h) + 20px);
+  }
+  .app{ max-width: 480px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  .app-header{
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom: 16px;
+  }
+  .stamp-logo{
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:'Cairo', sans-serif;
+    font-weight:800;
+    font-size: 22px;
+    color: var(--stamp);
+    border: 2px solid var(--stamp);
+    border-radius: 10px;
+    padding: 6px 18px;
+    letter-spacing: 0.5px;
+  }
+  .tagline{
+    margin: 12px 2px 18px;
+    font-size: 13.5px;
+    color: var(--text-soft);
+    font-weight: 600;
+    text-align:center;
+  }
+  .view{ }
+  .view[hidden]{ display:none; }
+
+  /* ---------- receipt-paper card shell ---------- */
+  .receipt{
+    position: relative;
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 4px 4px 0 0;
+    padding: 20px 18px 26px;
+    box-shadow: 0 14px 28px rgba(0,0,0,.35);
+    margin-bottom: 22px;
+    max-width:100%;
+  }
+  .receipt::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:-11px; height:12px;
+    background:
+      linear-gradient(-45deg, var(--bg) 6px, transparent 0) 0 0,
+      linear-gradient(45deg, var(--bg) 6px, transparent 0) 0 0;
+    background-size: 12px 12px;
+    background-repeat: repeat-x;
+  }
+
+  /* ---------- capture ---------- */
+  .capture-card{ text-align:center; }
+  #fileInputCamera, #fileInputGallery{ display:none; }
+  .capture-choices{ display:flex; gap:10px; }
+  .capture-choices .btn-primary{ flex:1; padding:16px 6px; font-size:15px; }
+  .btn-alt{ background: var(--bg-3) !important; color: var(--text-hi) !important; border: 2px solid var(--stamp); }
+  .btn-alt:active{ background: var(--bg-2) !important; }
+  .btn-primary{
+    width:100%;
+    background: var(--stamp);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 16px 12px;
+    font-family:'Cairo', sans-serif;
+    font-weight: 800;
+    font-size: 17px;
+    cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn-primary:active{ background: var(--stamp-dark); transform: scale(.98); }
+  .preview-wrap{
+    margin-top: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    max-height: 200px;
+  }
+  .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; cursor: zoom-in; }
+  .zoom-hint{ text-align:center; font-size:11.5px; color: var(--ink-soft); margin: 6px 0 0; font-weight:600; }
+  .status{
+    margin-top: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .status.error{ color: var(--stamp); }
+  .spinner{
+    display:inline-block; width:14px; height:14px; margin-left:8px;
+    border: 2px solid var(--ink-soft);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: -2px;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  /* ---------- result ---------- */
+  .result-label{ margin: 0 0 10px; font-weight: 700; font-size: 14px; color: var(--ink-soft); }
+  .phone-input{
+    width:100%;
+    direction: ltr;
+    text-align: center;
+    font-family:'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: 2px;
+    color: var(--ink);
+    border: none;
+    border-bottom: 2px dashed #C9C1AE;
+    background-image: linear-gradient(var(--highlighter), var(--highlighter));
+    background-repeat: no-repeat;
+    background-size: 0% 55%;
+    background-position: center 65%;
+    transition: background-size .7s ease;
+    padding: 10px 6px;
+    outline: none;
+  }
+  .phone-input.revealed{ background-size: 100% 55%; }
+  .phone-input:focus{ border-bottom-color: var(--stamp); }
+  .hint{ margin: 10px 2px 0; font-size: 12.5px; color: var(--ink-soft); text-align:center; }
+  .alt-wrap{ margin-top: 12px; }
+  .alt-label{ display:block; font-size: 12px; color: var(--ink-soft); font-weight:700; margin-bottom:6px; }
+  .alt-chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chip{
+    font-family:'JetBrains Mono', monospace; direction: ltr;
+    background: var(--paper-2); border: 1px solid #D8D1BE; color: var(--ink);
+    border-radius: 20px; padding: 5px 12px; font-size: 12.5px; cursor:pointer;
+  }
+  .result-actions{ display:flex; gap:10px; margin-top: 16px; }
+  .btn-ghost{
+    flex: 0 0 auto;
+    background: transparent;
+    border: 2px solid #D8D1BE;
+    color: var(--ink-soft);
+    border-radius: 10px;
+    padding: 0 18px;
+    font-family:'Cairo', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .result-actions .btn-primary{ flex: 1; }
+
+  .field-title{ display:block; margin-top:16px; font-size:12.5px; }
+  .addr-row{ display:flex; gap:8px; }
+  .meta-row{ display:flex; flex-direction:column; gap:8px; }
+  .field-input{
+    width:100%; direction:ltr; text-align:center;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:14px;
+    color: var(--ink); border:none; border-bottom:2px solid #D8D1BE;
+    background:transparent; padding:8px 6px; outline:none;
+  }
+  .field-input:focus{ border-bottom-color: var(--stamp); }
+  .meta-select{
+    font-family:'Cairo',sans-serif; direction:rtl; text-align:right; font-weight:700; font-size:14px;
+  }
+
+  .order-preview{
+    margin-top:16px; padding:12px 14px; border-radius:10px;
+    background: var(--paper-2); border:1px dashed #C9C1AE;
+    font-family:'JetBrains Mono', monospace; font-size:14px; line-height:1.7;
+    direction:ltr; text-align:left; white-space:pre-line; color: var(--ink);
+    max-width:100%; overflow-wrap:break-word;
+  }
+
+  .btn-wa{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    background:#25D366; color:#fff; text-decoration:none;
+    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+  }
+  .btn-wa.disabled{ pointer-events:none; opacity:.5; }
+  .btn-copy{
+    flex:1; background:transparent; border:2px solid #D8D1BE; color: var(--ink-soft);
+    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    cursor:pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .phone-input{ transition: none; }
+    .spinner{ animation: none; border-top-color: var(--ink-soft); }
+  }
+
+  /* ---------- orders view ---------- */
+  .orders-toolbar{ margin-bottom: 12px; }
+  .order-search{
+    width:100%; border:1px solid #4A4437; background: var(--bg-3); color: var(--text-hi);
+    border-radius:10px; padding:11px 14px; font-family:'Cairo',sans-serif; font-size:14px; outline:none;
+  }
+  .order-search:focus{ border-color: var(--stamp); }
+  .orders-count{
+    font-size: 12.5px; color: var(--text-soft); font-weight:700; margin: 0 2px 10px;
+  }
+  .order-list{
+    list-style:none; margin:0; padding:0;
+    background: var(--paper); border-radius: 12px; overflow:hidden;
+    box-shadow: 0 10px 24px rgba(0,0,0,.3);
+  }
+  .order-row{
+    padding: 12px 14px; border-top: 1px solid #EFE9D9; cursor:pointer;
+    min-height: 44px;
+  }
+  .order-row:first-child{ border-top:none; }
+  .order-row:active{ background: var(--paper-2); }
+  .order-row-main{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .order-row-phone{
+    font-family:'JetBrains Mono', monospace; direction:ltr; font-weight:700; font-size:16px; color: var(--ink);
+  }
+  .order-row-time{ font-size:10.5px; color: var(--ink-soft); font-weight:600; flex-shrink:0; }
+  .order-row-meta{
+    font-size:11.5px; color: var(--ink-soft); margin-top:3px; font-weight:600;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .empty-state{
+    text-align:center; color: var(--text-soft);
+    font-size: 13.5px; padding: 30px 16px; font-weight: 600;
+  }
+
+  /* ---------- more view ---------- */
+  .more-block{
+    background: var(--paper); border-radius: 12px; padding: 16px;
+    margin-bottom: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.25);
+  }
+  .more-block h3{ color: var(--ink); font-size:14px; font-weight:800; margin:0 0 10px; }
+  .more-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .btn-small{
+    background: var(--bg-3);
+    border: 1px solid #4A4437;
+    color: var(--text-hi);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family:'Cairo', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .more-actions .btn-danger{ color: #C23B22; border-color: #C23B22; background:transparent; }
+  .restaurant-chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .restaurant-chip{
+    font-family:'Cairo',sans-serif; font-weight:700; font-size:12.5px;
+    background: var(--paper-2); border:1px solid #D8D1BE; color: var(--ink);
+    border-radius: 20px; padding: 6px 13px;
+  }
+  .more-footnote{ font-size:11.5px; color: var(--text-soft); text-align:center; margin-top:6px; }
+
+  /* ---------- bottom navigation ---------- */
+  .bottom-nav{
+    position: fixed; left:0; right:0; bottom:0; z-index: 800;
+    display:flex; align-items:flex-start; justify-content:space-around;
+    background: var(--paper); border-top: 1px solid #E5DFCE;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.25);
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    max-width: 480px; margin: 0 auto;
+  }
+  .nav-btn{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    background:none; border:none; color: var(--ink-soft);
+    font-family:'Cairo',sans-serif; font-weight:700; font-size:11px;
+    padding: 6px 4px 2px; border-radius:14px; min-height:44px;
+  }
+  .nav-btn .nav-icon{ font-size:19px; line-height:1; }
+  .nav-btn.active{ color: var(--stamp); }
+  .nav-btn.scan-btn{ position:relative; }
+  .nav-btn.scan-btn .nav-icon{
+    width:46px; height:46px; border-radius:50%;
+    background: var(--stamp); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    margin-top:-24px; font-size:21px;
+    box-shadow: 0 6px 16px rgba(194,59,34,.45);
+    border: 3px solid var(--paper);
+  }
+  .nav-btn.scan-btn{ color: var(--ink); }
+
+  /* ---------- toast ---------- */
+  .toast{
+    position: fixed; bottom: calc(var(--nav-h) + 14px); left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--paper); color: var(--ink);
+    font-weight: 700; font-size: 14px;
+    padding: 10px 20px; border-radius: 30px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.4);
+    opacity: 0; pointer-events: none; z-index: 1200;
+    transition: opacity .25s ease, transform .25s ease;
+    max-width: 90vw; text-align:center;
+  }
+  .toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- batch review ---------- */
+  .batch-list{ list-style:none; margin:0 0 14px; padding:0; max-height: 55vh; overflow-y:auto; }
+  .batch-item{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 0; border-top: 1px dashed #C9C1AE;
+  }
+  .batch-item:first-child{ border-top:none; }
+  .batch-thumb{
+    width:56px; height:56px; object-fit:cover; border-radius:8px;
+    border:1px solid var(--line); cursor: zoom-in; flex-shrink:0;
+  }
+  .batch-item-body{ flex:1; min-width:0; }
+  .batch-phone-input{
+    width:100%; direction: ltr; text-align:left;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:16px;
+    color: var(--ink); border: none; border-bottom: 2px solid #D8D1BE;
+    background: transparent; padding: 4px 2px; outline:none;
+  }
+  .batch-phone-input:focus{ border-bottom-color: var(--stamp); }
+  .batch-status{ display:block; font-size:11px; color: var(--ink-soft); margin-top:2px; font-weight:600; }
+  .batch-status.error{ color: var(--stamp); }
+  .batch-export{ width:100%; }
+
+  /* ---------- lightbox (image zoom) ---------- */
+  .lightbox{
+    position: fixed; inset:0; background: rgba(10,9,7,.96); z-index: 999;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .lightbox[hidden]{ display:none; }
+  .lightbox-scroll{
+    width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling: touch;
+    display:flex; align-items:flex-start; justify-content:center; padding: 40px 0;
+  }
+  .lightbox-scroll img{
+    width:100%; max-width:600px; height:auto; cursor: zoom-in;
+    transition: width .25s ease;
+  }
+  .lightbox-scroll img.zoomed-in{ width:280%; max-width:none; cursor: zoom-out; }
+  .lightbox-close{
+    position: fixed; top:16px; left:16px; z-index:1000;
+    width:40px; height:40px; border-radius:50%;
+    background: var(--bg-3); color: var(--text-hi); border:1px solid #4A4437;
+    font-size:18px; display:flex; align-items:center; justify-content:center;
+  }
+
+  /* ---------- order detail bottom sheet ---------- */
+  .sheet{ position: fixed; inset:0; z-index: 900; display:flex; align-items:flex-end; justify-content:center; }
+  .sheet[hidden]{ display:none; }
+  .sheet-backdrop{ position:absolute; inset:0; background: rgba(10,9,7,.7); }
+  .sheet-panel{
+    position: relative; width:100%; max-width:480px;
+    background: var(--paper); color: var(--ink);
+    border-radius: 20px 20px 0 0; padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height: 82vh; overflow-y:auto;
+  }
+  .sheet-handle{ width:40px; height:4px; border-radius:2px; background:#D8D1BE; margin:6px auto 14px; }
+  .sheet-order-preview{
+    padding:14px; border-radius:10px; background: var(--paper-2); border:1px dashed #C9C1AE;
+    font-family:'JetBrains Mono', monospace; font-size:15px; line-height:1.8;
+    direction:ltr; text-align:left; white-space:pre-line; margin-bottom:16px;
+    overflow-wrap:break-word;
+  }
+  .sheet-primary-actions{ display:flex; gap:10px; margin-bottom:10px; }
+  .sheet-primary-actions a{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    text-decoration:none; border-radius:12px; padding:14px 10px;
+    font-family:'Cairo',sans-serif; font-weight:800; font-size:14.5px; min-height:44px;
+  }
+  .sheet-wa-btn{ background:#25D366; color:#fff; }
+  .sheet-wa-btn.disabled{ pointer-events:none; opacity:.5; }
+  .sheet-call-btn{ background: var(--stamp); color:#fff; }
+  .sheet-secondary-actions{ display:flex; gap:10px; margin-bottom:14px; }
+  .sheet-secondary-actions button{
+    flex:1; background:transparent; border:2px solid #D8D1BE; color: var(--ink-soft);
+    border-radius:12px; padding:12px 10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    min-height:44px; cursor:pointer;
+  }
+  .sheet-delete-btn{
+    width:100%; background:transparent; border:none; color:#C23B22;
+    font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px; padding:10px; cursor:pointer;
+    min-height:44px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="app-header">
+    <div class="stamp-logo">Scanly <span aria-hidden="true">🛵</span></div>
+  </header>
+
+  <main>
+    <!-- ============ SCAN VIEW ============ -->
+    <section class="view" id="viewScan">
+      <p class="tagline">صوّر الريسيت، ياخدلك رقم العميل في ثانية</p>
+
+      <section class="receipt capture-card" id="captureCard">
+        <input type="file" id="fileInputCamera" accept="image/*" capture="environment">
+        <input type="file" id="fileInputGallery" accept="image/*" multiple>
+        <div class="capture-choices">
+          <button class="btn-primary" id="cameraBtn">📷 صوّر دلوقتي</button>
+          <button class="btn-primary btn-alt" id="galleryBtn">🖼 اختار من المعرض</button>
+        </div>
+        <div class="preview-wrap" id="previewWrap" hidden>
+          <img id="previewImg" alt="صورة الريسيت">
+          <p class="zoom-hint">دوس على الصورة للتكبير ومطابقة الرقم</p>
+        </div>
+        <div class="status" id="statusText" hidden></div>
+      </section>
+
+      <section class="receipt batch-card" id="batchCard" hidden>
+        <p class="result-label">راجع كل رقم قبل الحفظ (<span id="batchCount">0</span> صورة):</p>
+        <ul class="batch-list" id="batchList"></ul>
+        <div class="result-actions">
+          <button class="btn-primary" id="batchSaveBtn">💾 حفظ الكل</button>
+          <button class="btn-ghost" id="batchDiscardBtn">إلغاء</button>
+        </div>
+        <button class="btn-small batch-export" id="batchExportBtn">⬇️ تنزيل نتائج الدفعة دي</button>
+      </section>
+
+      <section class="receipt result-card" id="resultCard" hidden>
+        <p class="result-label">الرقم اللي اتقرا من الريسيت:</p>
+        <input type="tel" id="phoneInput" class="phone-input" inputmode="numeric" maxlength="14" placeholder="01xxxxxxxxx">
+        <p class="hint" id="resultHint">لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ</p>
+        <div class="alt-wrap" id="altWrap" hidden>
+          <span class="alt-label">أرقام تانية اتلاقت في نفس الصورة:</span>
+          <div class="alt-chips" id="altChips"></div>
+        </div>
+
+        <label class="result-label field-title">العنوان (عمارة | دور | شقة)</label>
+        <div class="addr-row">
+          <input type="text" id="addrBuilding" class="field-input" inputmode="numeric" placeholder="عمارة">
+          <input type="text" id="addrFloor" class="field-input" inputmode="numeric" placeholder="دور">
+          <input type="text" id="addrApt" class="field-input" inputmode="numeric" placeholder="شقة">
+        </div>
+
+        <label class="result-label field-title">المطعم / المنطقة / الدفع</label>
+        <div class="meta-row">
+          <select id="restaurantSelect" class="field-input meta-select"></select>
+          <input type="text" id="areaTextInput" class="field-input" placeholder="المنطقة">
+          <input type="text" id="paymentTextInput" class="field-input" placeholder="فيزا أو 247ج">
+        </div>
+
+        <div class="order-preview" id="orderPreview"></div>
+
+        <div class="result-actions">
+          <button class="btn-primary" id="saveBtn">💾 حفظ الأوردر</button>
+          <button class="btn-ghost" id="discardBtn">إلغاء</button>
+        </div>
+        <div class="result-actions">
+          <a class="btn-small btn-wa" id="waBtn" target="_blank" rel="noopener">💬 واتساب العميل</a>
+          <button class="btn-copy" id="copyOrderBtn">📋 نسخ الأوردر</button>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ ORDERS VIEW ============ -->
+    <section class="view" id="viewOrders" hidden>
+      <div class="orders-toolbar">
+        <input type="search" id="orderSearch" class="order-search" placeholder="🔍 دور برقم أو منطقة أو مطعم">
+      </div>
+      <p class="orders-count">إجمالي الأوردرات: <span id="ordersCount">0</span></p>
+      <ul class="order-list" id="ordersList"></ul>
+      <p class="empty-state" id="ordersEmptyState">لسه مفيش أوردرات محفوظة — روح شاشة المسح وابدأ</p>
+    </section>
+
+    <!-- ============ MORE VIEW ============ -->
+    <section class="view" id="viewMore" hidden>
+      <div class="more-block">
+        <h3>تصدير ونسخ</h3>
+        <div class="more-actions">
+          <button class="btn-small" id="copyAllBtn">📋 نسخ كل الأرقام</button>
+          <button class="btn-small" id="csvBtn">⬇️ تنزيل CSV</button>
+        </div>
+      </div>
+      <div class="more-block">
+        <h3>المطاعم المحفوظة</h3>
+        <div class="restaurant-chips" id="restaurantChips"></div>
+      </div>
+      <div class="more-block">
+        <h3>منطقة الخطر</h3>
+        <div class="more-actions">
+          <button class="btn-small btn-danger" id="clearBtn">🗑 مسح كل السجل</button>
+        </div>
+      </div>
+      <p class="more-footnote">Scanly 🛵 — بياناتك محفوظة على جهازك بس، مفيش سيرفر بيشوفها</p>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<nav class="bottom-nav">
+  <button class="nav-btn" data-view="orders">
+    <span class="nav-icon" aria-hidden="true">📋</span>
+    الأوردرات
+  </button>
+  <button class="nav-btn scan-btn active" data-view="scan">
+    <span class="nav-icon" aria-hidden="true">📷</span>
+    المسح
+  </button>
+  <button class="nav-btn" data-view="more">
+    <span class="nav-icon" aria-hidden="true">⋯</span>
+    المزيد
+  </button>
+</nav>
+
+<div class="sheet" id="orderSheet" hidden>
+  <div class="sheet-backdrop" id="sheetBackdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-order-preview" id="sheetPreview"></div>
+    <div class="sheet-primary-actions">
+      <a class="sheet-wa-btn" id="sheetWaBtn" target="_blank" rel="noopener">💬 واتساب</a>
+      <a class="sheet-call-btn" id="sheetCallBtn">📞 اتصال</a>
+    </div>
+    <div class="sheet-secondary-actions">
+      <button id="sheetEditBtn">✏️ تعديل</button>
+      <button id="sheetCopyBtn">📄 نسخ الأوردر</button>
+    </div>
+    <button class="sheet-delete-btn" id="sheetDeleteBtn">🗑 حذف الأوردر ده</button>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" id="lightboxClose">✕</button>
+  <div class="lightbox-scroll" id="lightboxScroll">
+    <img id="lightboxImg" alt="تكبير الريسيت">
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'phone-log';
+const RESTAURANTS_KEY = 'restaurant-list';
+
+const els = {
+  fileInputCamera: document.getElementById('fileInputCamera'),
+  fileInputGallery: document.getElementById('fileInputGallery'),
+  cameraBtn: document.getElementById('cameraBtn'),
+  galleryBtn: document.getElementById('galleryBtn'),
+  previewWrap: document.getElementById('previewWrap'),
+  previewImg: document.getElementById('previewImg'),
+  statusText: document.getElementById('statusText'),
+  batchCard: document.getElementById('batchCard'),
+  batchCount: document.getElementById('batchCount'),
+  batchList: document.getElementById('batchList'),
+  batchSaveBtn: document.getElementById('batchSaveBtn'),
+  batchDiscardBtn: document.getElementById('batchDiscardBtn'),
+  batchExportBtn: document.getElementById('batchExportBtn'),
+  lightbox: document.getElementById('lightbox'),
+  lightboxImg: document.getElementById('lightboxImg'),
+  lightboxClose: document.getElementById('lightboxClose'),
+  resultCard: document.getElementById('resultCard'),
+  phoneInput: document.getElementById('phoneInput'),
+  resultHint: document.getElementById('resultHint'),
+  altWrap: document.getElementById('altWrap'),
+  altChips: document.getElementById('altChips'),
+  addrBuilding: document.getElementById('addrBuilding'),
+  addrFloor: document.getElementById('addrFloor'),
+  addrApt: document.getElementById('addrApt'),
+  restaurantSelect: document.getElementById('restaurantSelect'),
+  areaTextInput: document.getElementById('areaTextInput'),
+  paymentTextInput: document.getElementById('paymentTextInput'),
+  orderPreview: document.getElementById('orderPreview'),
+  waBtn: document.getElementById('waBtn'),
+  copyOrderBtn: document.getElementById('copyOrderBtn'),
+  saveBtn: document.getElementById('saveBtn'),
+  discardBtn: document.getElementById('discardBtn'),
+  toast: document.getElementById('toast'),
+  viewScan: document.getElementById('viewScan'),
+  viewOrders: document.getElementById('viewOrders'),
+  viewMore: document.getElementById('viewMore'),
+  orderSearch: document.getElementById('orderSearch'),
+  ordersCount: document.getElementById('ordersCount'),
+  ordersList: document.getElementById('ordersList'),
+  ordersEmptyState: document.getElementById('ordersEmptyState'),
+  copyAllBtn: document.getElementById('copyAllBtn'),
+  csvBtn: document.getElementById('csvBtn'),
+  clearBtn: document.getElementById('clearBtn'),
+  restaurantChips: document.getElementById('restaurantChips'),
+  orderSheet: document.getElementById('orderSheet'),
+  sheetBackdrop: document.getElementById('sheetBackdrop'),
+  sheetPreview: document.getElementById('sheetPreview'),
+  sheetWaBtn: document.getElementById('sheetWaBtn'),
+  sheetCallBtn: document.getElementById('sheetCallBtn'),
+  sheetEditBtn: document.getElementById('sheetEditBtn'),
+  sheetCopyBtn: document.getElementById('sheetCopyBtn'),
+  sheetDeleteBtn: document.getElementById('sheetDeleteBtn'),
+};
+
+let log = [];
+let restaurants = ['اما'];
+let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
+let sheetIndex = null; // which log entry the open bottom sheet is showing
+
+// escapes any text before it's injected via innerHTML — applies to anything
+// that came from Gemini's read of a photo, or from a user-typed field
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+// ---------- storage (plain browser localStorage — works on any real website) ----------
+async function loadLog(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){
+    return [];
+  }
+}
+async function saveLog(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(log));
+  }catch(e){
+    showToast('تعذّر الحفظ — جرّب تاني');
+  }
+}
+
+function loadRestaurants(){
+  try{
+    const raw = localStorage.getItem(RESTAURANTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  }catch(e){}
+  return ['اما'];
+}
+function saveRestaurants(){
+  try{ localStorage.setItem(RESTAURANTS_KEY, JSON.stringify(restaurants)); }catch(e){}
+}
+
+// ---------- toast ----------
+let toastTimer;
+function showToast(msg){
+  els.toast.textContent = msg;
+  els.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> els.toast.classList.remove('show'), 1800);
+}
+
+// ---------- bottom navigation / view switching ----------
+const VIEWS = { scan: els.viewScan, orders: els.viewOrders, more: els.viewMore };
+function switchView(name){
+  Object.entries(VIEWS).forEach(([key, el]) => { el.hidden = key !== name; });
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === name);
+  });
+  if (name === 'orders') renderOrdersList();
+  if (name === 'more') renderRestaurantChips();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+
+// ---------- restaurant dropdown (Scan form) ----------
+function renderRestaurantOptions(selected){
+  const options = restaurants.map(r =>
+    `<option value="${escapeHTML(r)}" ${r === selected ? 'selected' : ''}>${escapeHTML(r)}</option>`
+  ).join('');
+  els.restaurantSelect.innerHTML = options + `<option value="__new__">+ مطعم جديد</option>`;
+}
+els.restaurantSelect.addEventListener('change', () => {
+  if (els.restaurantSelect.value === '__new__'){
+    const name = prompt('اسم المطعم الجديد؟');
+    if (name && name.trim()){
+      restaurants.push(name.trim());
+      saveRestaurants();
+      renderRestaurantOptions(name.trim());
+    }else{
+      renderRestaurantOptions(restaurants[0]);
+    }
+  }
+  updateOrderPreview();
+});
+
+function renderRestaurantChips(){
+  els.restaurantChips.innerHTML = restaurants.map(r => `<span class="restaurant-chip">${escapeHTML(r)}</span>`).join('');
+}
+
+// ---------- shared formatting ----------
+function formatTime(iso){
+  try{
+    return new Intl.DateTimeFormat('ar-EG', { dateStyle:'short', timeStyle:'short' }).format(new Date(iso));
+  }catch(e){ return ''; }
+}
+
+function orderLinesFromEntry(entry){
+  const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
+  const line3 = [entry.restaurant, entry.area, entry.payment].filter(Boolean).join(' ');
+  return [entry.phone || '', address, line3]; // always exactly 3 lines, even if some are empty
+}
+
+// ---------- Orders view (compact list + search) ----------
+function renderOrdersList(){
+  els.ordersCount.textContent = log.length;
+  els.ordersEmptyState.hidden = log.length !== 0;
+  els.ordersList.hidden = log.length === 0;
+
+  const query = els.orderSearch.value.trim().toLowerCase();
+  const indexed = log.map((entry, i) => ({ entry, i }));
+  const filtered = query
+    ? indexed.filter(({entry}) => {
+        const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
+        const haystack = [entry.phone, entry.restaurant, entry.area, entry.payment, address]
+          .filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(query);
+      })
+    : indexed;
+
+  els.ordersList.innerHTML = filtered.map(({entry, i}) => {
+    const safePhone = escapeHTML(entry.phone);
+    const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
+    const metaParts = [entry.restaurant, entry.area, address ? `🏠 ${address}` : '', entry.payment].filter(Boolean);
+    const metaLine = metaParts.length
+      ? `<div class="order-row-meta">${metaParts.map(escapeHTML).join(' • ')}</div>`
+      : '';
+    return `
+      <li class="order-row" data-idx="${i}">
+        <div class="order-row-main">
+          <span class="order-row-phone">${safePhone}</span>
+          <span class="order-row-time">${formatTime(entry.savedAt)}</span>
+        </div>
+        ${metaLine}
+      </li>`;
+  }).join('');
+}
+
+els.orderSearch.addEventListener('input', renderOrdersList);
+
+els.ordersList.addEventListener('click', (e) => {
+  const row = e.target.closest('.order-row');
+  if (!row) return;
+  openOrderSheet(Number(row.dataset.idx));
+});
+
+// ---------- order detail bottom sheet ----------
+function openOrderSheet(i){
+  const entry = log[i];
+  if (!entry) return;
+  sheetIndex = i;
+  const lines = orderLinesFromEntry(entry);
+  els.sheetPreview.textContent = lines.join('\n');
+
+  if (/^01\d{9}$/.test(entry.phone || '')){
+    const message = encodeURIComponent(lines.join('\n'));
+    els.sheetWaBtn.href = `https://wa.me/20${entry.phone.slice(1)}?text=${message}`;
+    els.sheetWaBtn.classList.remove('disabled');
+    els.sheetCallBtn.href = `tel:${entry.phone}`;
+  }else{
+    els.sheetWaBtn.removeAttribute('href');
+    els.sheetWaBtn.classList.add('disabled');
+    els.sheetCallBtn.removeAttribute('href');
+  }
+
+  els.orderSheet.hidden = false;
+}
+function closeOrderSheet(){
+  els.orderSheet.hidden = true;
+  sheetIndex = null;
+}
+els.sheetBackdrop.addEventListener('click', closeOrderSheet);
+
+els.sheetCopyBtn.addEventListener('click', async () => {
+  if (sheetIndex === null) return;
+  const entry = log[sheetIndex];
+  await navigator.clipboard.writeText(orderLinesFromEntry(entry).join('\n'));
+  showToast('اتنسخ الأوردر ✅');
+});
+
+els.sheetEditBtn.addEventListener('click', () => {
+  if (sheetIndex === null) return;
+  const i = sheetIndex;
+  closeOrderSheet();
+  switchView('scan');
+  openEditEntry(i);
+});
+
+els.sheetDeleteBtn.addEventListener('click', async () => {
+  if (sheetIndex === null) return;
+  if (!confirm('تمسح الأوردر ده؟')) return;
+  log.splice(sheetIndex, 1);
+  await saveLog();
+  closeOrderSheet();
+  renderOrdersList();
+  showToast('اتمسح');
+});
+
+// ---------- image resize (keeps upload small/fast on mobile data — phone-only extraction doesn't need a huge image) ----------
+function resizeImageToBase64(file, maxDim = 1100, quality = 0.75){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('image load failed'));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim){
+          if (width > height){ height = Math.round(height * (maxDim / width)); width = maxDim; }
+          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------- OCR (Gemini Flash-Lite, called through our own /api route so the key stays hidden) ----------
+async function extractPhone(base64Image){
+  const response = await fetch('/api/extract-phone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64Image })
+  });
+  if (!response.ok) throw new Error('api-failed');
+  const data = await response.json();
+  return { phone: data.phone || null, alternates: [] };
+}
+
+function setStatus(msg, isError=false){
+  els.statusText.hidden = !msg;
+  els.statusText.textContent = msg;
+  els.statusText.classList.toggle('error', isError);
+}
+
+function renderAlternates(list){
+  els.altChips.innerHTML = '';
+  els.altWrap.hidden = list.length === 0;
+  list.forEach(num => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = num;
+    chip.addEventListener('click', () => { els.phoneInput.value = num; updateOrderPreview(); });
+    els.altChips.appendChild(chip);
+  });
+}
+
+function buildOrderLines(){
+  const phone = els.phoneInput.value.trim();
+  const building = els.addrBuilding.value.trim();
+  const floor = els.addrFloor.value.trim();
+  const apt = els.addrApt.value.trim();
+  const address = [building, floor, apt].filter(Boolean).join(' ');
+  const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
+  const area = els.areaTextInput.value.trim();
+  const payment = els.paymentTextInput.value.trim();
+  const line3 = [restaurant, area, payment].filter(Boolean).join(' ');
+  return [phone, address, line3]; // always exactly 3 lines, even if some are empty
+}
+
+function updateOrderPreview(){
+  const lines = buildOrderLines();
+  els.orderPreview.textContent = lines.join('\n');
+  const phone = els.phoneInput.value.trim();
+  if (/^01\d{9}$/.test(phone)){
+    const message = encodeURIComponent(lines.join('\n'));
+    els.waBtn.href = `https://wa.me/20${phone.slice(1)}?text=${message}`;
+    els.waBtn.classList.remove('disabled');
+  }else{
+    els.waBtn.removeAttribute('href');
+    els.waBtn.classList.add('disabled');
+  }
+}
+
+[els.phoneInput, els.addrBuilding, els.addrFloor, els.addrApt, els.areaTextInput, els.paymentTextInput]
+  .forEach(el => el.addEventListener('input', updateOrderPreview));
+
+els.copyOrderBtn.addEventListener('click', async () => {
+  const lines = buildOrderLines();
+  if (!lines.some(l => l !== '')){ showToast('مفيش بيانات تتنسخ'); return; }
+  await navigator.clipboard.writeText(lines.join('\n'));
+  showToast('اتنسخ الأوردر ✅');
+});
+
+function openResult(phone, alternates = []){
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
+  els.resultCard.hidden = false;
+  els.phoneInput.value = phone || '';
+  els.resultHint.textContent = phone
+    ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
+    : 'مالقتش رقم في الصورة — اكتبه يدويًا';
+  renderAlternates(alternates);
+  els.phoneInput.classList.remove('revealed');
+  requestAnimationFrame(() => {
+    void els.phoneInput.offsetWidth;
+    els.phoneInput.classList.add('revealed');
+  });
+
+  els.addrBuilding.value = '';
+  els.addrFloor.value = '';
+  els.addrApt.value = '';
+  renderRestaurantOptions(restaurants[0]);
+  els.areaTextInput.value = '';
+  els.paymentTextInput.value = '';
+  updateOrderPreview();
+
+  els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function openEditEntry(i){
+  const entry = log[i];
+  if (!entry) return;
+  editingIndex = i;
+  els.saveBtn.textContent = '💾 حفظ التعديل';
+  els.batchCard.hidden = true;
+  els.previewWrap.hidden = true;
+  els.resultCard.hidden = false;
+
+  els.phoneInput.value = entry.phone || '';
+  els.resultHint.textContent = 'بتعدّل أوردر محفوظ — احفظ لما تخلص';
+  renderAlternates([]);
+  els.phoneInput.classList.add('revealed');
+
+  els.addrBuilding.value = entry.building || '';
+  els.addrFloor.value = entry.floor || '';
+  els.addrApt.value = entry.apt || '';
+  if (entry.restaurant && !restaurants.includes(entry.restaurant)){
+    restaurants.push(entry.restaurant);
+    saveRestaurants();
+  }
+  renderRestaurantOptions(entry.restaurant || restaurants[0]);
+  els.areaTextInput.value = entry.area || '';
+  els.paymentTextInput.value = entry.payment || '';
+  updateOrderPreview();
+
+  els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+els.cameraBtn.addEventListener('click', () => els.fileInputCamera.click());
+els.galleryBtn.addEventListener('click', () => els.fileInputGallery.click());
+
+els.fileInputCamera.addEventListener('change', () => {
+  const file = els.fileInputCamera.files[0];
+  els.fileInputCamera.value = '';
+  if (file) handleFile(file);
+});
+
+els.fileInputGallery.addEventListener('change', () => {
+  const files = Array.from(els.fileInputGallery.files);
+  els.fileInputGallery.value = '';
+  if (files.length > 1){
+    handleBatch(files);
+  }else if (files.length === 1){
+    handleFile(files[0]);
+  }
+});
+
+async function handleFile(file){
+  els.resultCard.hidden = true;
+  els.batchCard.hidden = true;
+  els.previewWrap.hidden = false;
+  els.previewImg.src = URL.createObjectURL(file);
+  setStatus('');
+
+  try{
+    setStatus('بيقرا الريسيت...');
+    els.statusText.insertAdjacentHTML('beforeend', '<span class="spinner"></span>');
+    const base64 = await resizeImageToBase64(file);
+    const { phone, alternates } = await extractPhone(base64);
+    setStatus('');
+    openResult(phone, alternates);
+  }catch(err){
+    setStatus('حصلت مشكلة في القراءة — جرّب تاني، أو اكتب الرقم يدويًا', true);
+    openResult('', []);
+  }
+}
+
+// ---------- lightbox (tap any receipt image to zoom in and compare) ----------
+function openLightbox(src){
+  if (!src) return;
+  els.lightboxImg.src = src;
+  els.lightboxImg.classList.remove('zoomed-in');
+  els.lightbox.hidden = false;
+}
+els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src));
+els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
+els.lightboxClose.addEventListener('click', () => { els.lightbox.hidden = true; });
+
+// ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
+let batchState = [];
+
+async function handleBatch(files){
+  els.resultCard.hidden = true;
+  els.previewWrap.hidden = true;
+  els.batchCard.hidden = false;
+  batchState = files.map(file => ({ file, phone: '', status: 'pending', thumb: URL.createObjectURL(file) }));
+  els.batchCount.textContent = batchState.length;
+  renderBatch();
+
+  for (let i = 0; i < batchState.length; i++){
+    batchState[i].status = 'loading';
+    updateBatchRow(i);
+    try{
+      const base64 = await resizeImageToBase64(batchState[i].file);
+      const { phone } = await extractPhone(base64);
+      batchState[i].phone = phone || '';
+      batchState[i].status = phone ? 'done' : 'empty';
+    }catch(err){
+      batchState[i].status = 'error';
+    }
+    updateBatchRow(i);
+  }
+}
+
+function batchRowHTML(item, i){
+  const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: 'حصلت مشكلة في القراءة' };
+  return `
+    <li class="batch-item" data-row="${i}">
+      <img class="batch-thumb" src="${item.thumb}" data-idx="${i}">
+      <div class="batch-item-body">
+        <input type="tel" class="batch-phone-input" inputmode="numeric" maxlength="14"
+               data-idx="${i}" value="${escapeHTML(item.phone)}" placeholder="01xxxxxxxxx">
+        <span class="batch-status ${item.status === 'error' ? 'error' : ''}">${labels[item.status] || ''}</span>
+      </div>
+    </li>`;
+}
+
+function renderBatch(){
+  els.batchList.innerHTML = batchState.map((item, i) => batchRowHTML(item, i)).join('');
+}
+
+// updates a single row in place (used while a batch is processing) so typing
+// in a different row isn't interrupted by a full list rebuild
+function updateBatchRow(i){
+  const rowEl = els.batchList.querySelector(`li[data-row="${i}"]`);
+  if (!rowEl){ renderBatch(); return; }
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = batchRowHTML(batchState[i], i).trim();
+  rowEl.replaceWith(wrapper.firstElementChild);
+}
+
+els.batchList.addEventListener('click', (e) => {
+  const thumb = e.target.closest('.batch-thumb');
+  if (thumb) openLightbox(thumb.src);
+});
+
+els.batchList.addEventListener('input', (e) => {
+  const input = e.target.closest('.batch-phone-input');
+  if (!input) return;
+  batchState[Number(input.dataset.idx)].phone = input.value.trim();
+});
+
+els.batchSaveBtn.addEventListener('click', async () => {
+  const valid = batchState.filter(b => b.phone);
+  if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
+  valid.forEach(b => log.unshift({
+    phone: b.phone,
+    savedAt: new Date().toISOString(),
+    building: null, floor: null, apt: null,
+    restaurant: null, area: null, payment: null,
+  }));
+  await saveLog();
+  els.batchCard.hidden = true;
+  batchState = [];
+  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات`);
+});
+
+els.batchDiscardBtn.addEventListener('click', () => {
+  els.batchCard.hidden = true;
+  batchState = [];
+});
+
+els.batchExportBtn.addEventListener('click', () => {
+  const valid = batchState.filter(b => b.phone);
+  if (!valid.length){ showToast('مفيش أرقام تتصدّر'); return; }
+  const rows = ['الرقم', ...valid.map(b => b.phone)];
+  const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `batch-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+});
+
+els.saveBtn.addEventListener('click', async () => {
+  const phone = els.phoneInput.value.trim();
+  if (!phone){
+    showToast('اكتب الرقم الأول');
+    return;
+  }
+  const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
+  const entryData = {
+    phone,
+    savedAt: (editingIndex !== null && log[editingIndex]) ? log[editingIndex].savedAt : new Date().toISOString(),
+    building: els.addrBuilding.value.trim() || null,
+    floor: els.addrFloor.value.trim() || null,
+    apt: els.addrApt.value.trim() || null,
+    restaurant: restaurant || null,
+    area: els.areaTextInput.value.trim() || null,
+    payment: els.paymentTextInput.value.trim() || null,
+  };
+  if (editingIndex !== null && log[editingIndex]){
+    log[editingIndex] = entryData;
+  }else{
+    log.unshift(entryData);
+  }
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
+  await saveLog();
+  els.resultCard.hidden = true;
+  els.previewWrap.hidden = true;
+  showToast('اتحفظ ✅');
+  switchView('orders');
+});
+
+els.discardBtn.addEventListener('click', () => {
+  els.resultCard.hidden = true;
+  els.previewWrap.hidden = true;
+  editingIndex = null;
+  els.saveBtn.textContent = '💾 حفظ الأوردر';
+});
+
+els.copyAllBtn.addEventListener('click', async () => {
+  const text = log.map(e => e.phone).join('\n');
+  await navigator.clipboard.writeText(text);
+  showToast('اتنسخت كل الأرقام ✅');
+});
+
+els.csvBtn.addEventListener('click', () => {
+  const rows = ['الرقم,التاريخ,عمارة,دور,شقة,المطعم,المنطقة,الدفع', ...log.map(e =>
+    `${e.phone},${formatTime(e.savedAt)},${e.building || ''},${e.floor || ''},${e.apt || ''},${e.restaurant || ''},${e.area || ''},${e.payment || ''}`
+  )];
+  const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `phone-log-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+});
+
+els.clearBtn.addEventListener('click', async () => {
+  if (!confirm('تمسح كل الأرقام المحفوظة؟ الخطوة دي مش هترجع')) return;
+  log = [];
+  await saveLog();
+  renderOrdersList();
+  showToast('اتمسح الكل');
+});
+
+// ---------- init ----------
+(async () => {
+  log = await loadLog();
+  restaurants = loadRestaurants();
+  switchView('scan');
+})();
+</script>
+</body>
+</html>
