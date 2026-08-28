@@ -3,348 +3,353 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Scanly 🛵 — قراءة أرقام الريسيتات</title>
+<title>Scanly ðŸ›µ â€” Ù‚Ø±Ø§Ø¡Ø© Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø±ÙŠØ³ÙŠØªØ§Øª</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
+  /* ===== Adaptive Mission Control theme â€” CSS variables, Light default / Dark via prefers-color-scheme ===== */
   :root{
-    --bg: #1E1C18;
-    --bg-2: #28251F;
-    --bg-3: #322E26;
-    --paper: #FBF8F1;
-    --paper-2: #F1ECDF;
-    --ink: #2A2620;
-    --ink-soft: #7A7267;
-    --stamp: #C23B22;
-    --stamp-dark: #9C2E19;
-    --highlighter: #F6C445;
-    --text-hi: #F3EEE1;
-    --text-soft: #B7AF9F;
-    --line: #45403635;
-    --nav-h: 76px;
+    --bg: #EEF1F5;
+    --surface: #FFFFFF;
+    --text: #1B2430;
+    --text-secondary: #5C6B7A;
+    --primary: #2A5C8A;
+    --primary-text-on: #FFFFFF;
+    --border: #DCE3EA;
+    --success-bg: #E4F3EB;
+    --success-text: #1E8A5B;
+    --error-bg: #FBE7E4;
+    --error-border: #E9BEB6;
+    --error-text: #C0392B;
+    --nav-h: 78px;
   }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg: #14171C;
+      --surface: #1B1F26;
+      --text: #EDEFF2;
+      --text-secondary: #7C8896;
+      --primary: #5B9BD5;
+      --primary-text-on: #0A1520;
+      --border: #2C3138;
+      --success-bg: #132A21;
+      --success-text: #4E9B72;
+      --error-bg: #2A1815;
+      --error-border: #4A2A24;
+      --error-text: #D98D7E;
+    }
+  }
+
   *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html,body{ margin:0; padding:0; overflow-x:hidden; max-width:100vw; }
   body{
-    background: radial-gradient(ellipse at top, var(--bg-3), var(--bg) 70%);
-    color: var(--text-hi);
+    background: var(--bg);
+    color: var(--text);
     font-family: 'Cairo', sans-serif;
     min-height: 100vh;
     padding: 16px 14px calc(var(--nav-h) + 20px);
   }
   .app{ max-width: 480px; margin: 0 auto; }
+  a{ color: inherit; }
+  :focus-visible{ outline: 2px solid var(--primary); outline-offset: 2px; }
 
   /* ---------- header ---------- */
-  .app-header{
-    display:flex; align-items:center; justify-content:center;
-    margin-bottom: 16px;
-  }
+  .app-header{ text-align:center; margin-bottom: 16px; }
   .stamp-logo{
     display:inline-flex; align-items:center; gap:6px;
-    font-family:'Cairo', sans-serif;
-    font-weight:800;
-    font-size: 22px;
-    color: var(--stamp);
-    border: 2px solid var(--stamp);
-    border-radius: 10px;
-    padding: 6px 18px;
-    letter-spacing: 0.5px;
+    font-family:'Cairo', sans-serif; font-weight:800; font-size: 20px;
+    color: var(--text);
+  }
+  .header-status{
+    margin: 4px 0 0; font-size: 12px; color: var(--text-secondary); font-weight:600;
   }
   .tagline{
-    margin: 12px 2px 18px;
-    font-size: 13.5px;
-    color: var(--text-soft);
-    font-weight: 600;
-    text-align:center;
+    margin: 0 2px 16px; font-size: 12.5px; color: var(--text-secondary); font-weight:600; text-align:center;
   }
-  .view{ }
   .view[hidden]{ display:none; }
 
-  /* ---------- receipt-paper card shell ---------- */
+  /* ---------- card shell ---------- */
   .receipt{
-    position: relative;
-    background: var(--paper);
-    color: var(--ink);
-    border-radius: 4px 4px 0 0;
-    padding: 20px 18px 26px;
-    box-shadow: 0 14px 28px rgba(0,0,0,.35);
-    margin-bottom: 22px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 16px;
+    box-shadow: 0 2px 10px rgba(20,23,28,.06);
+    margin-bottom: 20px;
     max-width:100%;
   }
-  .receipt::after{
-    content:"";
-    position:absolute; left:0; right:0; bottom:-11px; height:12px;
-    background:
-      linear-gradient(-45deg, var(--bg) 6px, transparent 0) 0 0,
-      linear-gradient(45deg, var(--bg) 6px, transparent 0) 0 0;
-    background-size: 12px 12px;
-    background-repeat: repeat-x;
+  @media (prefers-color-scheme: dark){
+    .receipt{ box-shadow: 0 2px 12px rgba(0,0,0,.35); }
   }
 
   /* ---------- capture ---------- */
   .capture-card{ text-align:center; }
   #fileInputCamera, #fileInputGallery{ display:none; }
   .capture-choices{ display:flex; gap:10px; }
-  .capture-choices .btn-primary{ flex:1; padding:16px 6px; font-size:15px; }
-  .btn-alt{ background: var(--bg-3) !important; color: var(--text-hi) !important; border: 2px solid var(--stamp); }
-  .btn-alt:active{ background: var(--bg-2) !important; }
+  .capture-choices .btn-primary{ flex:1.4; padding:16px 6px; font-size:15px; }
+  .capture-choices .btn-alt{ flex:1; }
   .btn-primary{
     width:100%;
-    background: var(--stamp);
-    color: #fff;
+    background: var(--primary);
+    color: var(--primary-text-on);
     border: none;
     border-radius: 10px;
     padding: 16px 12px;
     font-family:'Cairo', sans-serif;
     font-weight: 800;
-    font-size: 17px;
+    font-size: 16px;
     cursor: pointer;
-    transition: background .15s ease, transform .1s ease;
+    transition: opacity .15s ease, transform .1s ease;
   }
-  .btn-primary:active{ background: var(--stamp-dark); transform: scale(.98); }
+  .btn-primary:active{ opacity:.88; transform: scale(.98); }
+  .btn-alt{
+    background: var(--surface) !important;
+    color: var(--primary) !important;
+    border: 1.5px solid var(--border);
+  }
+  .btn-alt:active{ background: var(--bg) !important; }
   .preview-wrap{
-    margin-top: 16px;
-    border-radius: 8px;
+    margin-top: 14px;
+    border-radius: 10px;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid var(--border);
     max-height: 200px;
   }
   .preview-wrap img{ display:block; width:100%; object-fit: cover; max-height: 200px; cursor: zoom-in; }
-  .zoom-hint{ text-align:center; font-size:11.5px; color: var(--ink-soft); margin: 6px 0 0; font-weight:600; }
+  .zoom-hint{ text-align:center; font-size:11px; color: var(--text-secondary); margin: 6px 0 0; font-weight:600; }
   .status{
-    margin-top: 14px;
-    font-size: 14px;
+    margin-top: 12px;
+    font-size: 13.5px;
     font-weight: 600;
-    color: var(--ink-soft);
+    color: var(--text-secondary);
+    display:flex; align-items:center; justify-content:center; gap:8px;
   }
-  .status.error{ color: var(--stamp); }
+  .status.error{ color: var(--error-text); }
   .spinner{
-    display:inline-block; width:14px; height:14px; margin-left:8px;
-    border: 2px solid var(--ink-soft);
-    border-top-color: transparent;
+    display:inline-block; width:15px; height:15px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin .7s linear infinite;
-    vertical-align: -2px;
   }
   @keyframes spin{ to{ transform: rotate(360deg); } }
 
   /* ---------- result ---------- */
-  .result-label{ margin: 0 0 10px; font-weight: 700; font-size: 14px; color: var(--ink-soft); }
+  .result-label{ margin: 0 0 8px; font-weight: 700; font-size: 13px; color: var(--text-secondary); }
   .phone-input{
     width:100%;
     direction: ltr;
+    unicode-bidi: isolate;
     text-align: center;
     font-family:'JetBrains Mono', monospace;
     font-weight: 700;
-    font-size: 28px;
-    letter-spacing: 2px;
-    color: var(--ink);
-    border: none;
-    border-bottom: 2px dashed #C9C1AE;
-    background-image: linear-gradient(var(--highlighter), var(--highlighter));
-    background-repeat: no-repeat;
-    background-size: 0% 55%;
-    background-position: center 65%;
-    transition: background-size .7s ease;
-    padding: 10px 6px;
+    font-size: 27px;
+    letter-spacing: 1px;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    padding: 12px 6px;
     outline: none;
   }
-  .phone-input.revealed{ background-size: 100% 55%; }
-  .phone-input:focus{ border-bottom-color: var(--stamp); }
-  .hint{ margin: 10px 2px 0; font-size: 12.5px; color: var(--ink-soft); text-align:center; }
+  .phone-input:focus{ border-color: var(--primary); }
+  .hint{ margin: 9px 2px 0; font-size: 12px; color: var(--text-secondary); text-align:center; }
   .alt-wrap{ margin-top: 12px; }
-  .alt-label{ display:block; font-size: 12px; color: var(--ink-soft); font-weight:700; margin-bottom:6px; }
+  .alt-label{ display:block; font-size: 11.5px; color: var(--text-secondary); font-weight:700; margin-bottom:6px; }
   .alt-chips{ display:flex; gap:6px; flex-wrap:wrap; }
   .chip{
-    font-family:'JetBrains Mono', monospace; direction: ltr;
-    background: var(--paper-2); border: 1px solid #D8D1BE; color: var(--ink);
-    border-radius: 20px; padding: 5px 12px; font-size: 12.5px; cursor:pointer;
+    font-family:'JetBrains Mono', monospace; direction: ltr; unicode-bidi: isolate;
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor:pointer;
   }
-  .result-actions{ display:flex; gap:10px; margin-top: 16px; }
+  .result-actions{ display:flex; gap:10px; margin-top: 14px; }
   .btn-ghost{
     flex: 0 0 auto;
     background: transparent;
-    border: 2px solid #D8D1BE;
-    color: var(--ink-soft);
+    border: 1.5px solid var(--border);
+    color: var(--text-secondary);
     border-radius: 10px;
     padding: 0 18px;
     font-family:'Cairo', sans-serif;
     font-weight: 700;
-    font-size: 15px;
+    font-size: 14.5px;
     cursor: pointer;
+    min-height:44px;
   }
-  .result-actions .btn-primary{ flex: 1; }
+  .result-actions .btn-primary{ flex: 1; min-height:44px; }
 
-  .field-title{ display:block; margin-top:16px; font-size:12.5px; }
+  .field-title{ display:block; margin-top:14px; font-size:12px; }
   .addr-row{ display:flex; gap:8px; }
   .meta-row{ display:flex; flex-direction:column; gap:8px; }
   .field-input{
-    width:100%; direction:ltr; text-align:center;
+    width:100%; direction:ltr; unicode-bidi: isolate; text-align:center;
     font-family:'JetBrains Mono', monospace; font-weight:700; font-size:14px;
-    color: var(--ink); border:none; border-bottom:2px solid #D8D1BE;
-    background:transparent; padding:8px 6px; outline:none;
+    color: var(--text); border:1.5px solid var(--border); border-radius:8px;
+    background: var(--bg); padding:10px 6px; outline:none; min-height:44px;
   }
-  .field-input:focus{ border-bottom-color: var(--stamp); }
+  .field-input:focus{ border-color: var(--primary); }
   .meta-select{
-    font-family:'Cairo',sans-serif; direction:rtl; text-align:right; font-weight:700; font-size:14px;
+    font-family:'Cairo',sans-serif; direction:rtl; unicode-bidi:normal; text-align:right; font-weight:700; font-size:14px;
   }
 
   .order-preview{
-    margin-top:16px; padding:12px 14px; border-radius:10px;
-    background: var(--paper-2); border:1px dashed #C9C1AE;
-    font-family:'JetBrains Mono', monospace; font-size:14px; line-height:1.7;
-    direction:ltr; text-align:left; white-space:pre-line; color: var(--ink);
+    margin-top:14px; padding:12px 14px; border-radius:10px;
+    background: var(--bg); border:1px solid var(--border);
+    font-family:'JetBrains Mono', monospace; font-size:13.5px; line-height:1.7;
+    direction:ltr; unicode-bidi: isolate; text-align:left; white-space:pre-line; color: var(--text);
     max-width:100%; overflow-wrap:break-word;
   }
 
   .btn-wa{
     flex:1; display:flex; align-items:center; justify-content:center;
     background:#25D366; color:#fff; text-decoration:none;
-    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    border-radius:10px; padding:11px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    min-height:44px;
   }
   .btn-wa.disabled{ pointer-events:none; opacity:.5; }
   .btn-copy{
-    flex:1; background:transparent; border:2px solid #D8D1BE; color: var(--ink-soft);
-    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
-    cursor:pointer;
+    flex:1; background: transparent; border:1.5px solid var(--border); color: var(--text-secondary);
+    border-radius:10px; padding:11px 12px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    cursor:pointer; min-height:44px;
   }
 
   @media (prefers-reduced-motion: reduce){
-    .phone-input{ transition: none; }
-    .spinner{ animation: none; border-top-color: var(--ink-soft); }
+    .spinner{ animation: none; }
   }
 
   /* ---------- orders view ---------- */
   .orders-toolbar{ margin-bottom: 12px; }
   .order-search{
-    width:100%; border:1px solid #4A4437; background: var(--bg-3); color: var(--text-hi);
-    border-radius:10px; padding:11px 14px; font-family:'Cairo',sans-serif; font-size:14px; outline:none;
+    width:100%; border:1.5px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius:10px; padding:12px 14px; font-family:'Cairo',sans-serif; font-size:14px; outline:none;
+    min-height:44px;
   }
-  .order-search:focus{ border-color: var(--stamp); }
+  .order-search:focus{ border-color: var(--primary); }
   .orders-count{
-    font-size: 12.5px; color: var(--text-soft); font-weight:700; margin: 0 2px 10px;
+    font-size: 12px; color: var(--text-secondary); font-weight:700; margin: 0 2px 10px;
   }
   .order-list{
     list-style:none; margin:0; padding:0;
-    background: var(--paper); border-radius: 12px; overflow:hidden;
-    box-shadow: 0 10px 24px rgba(0,0,0,.3);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow:hidden;
   }
   .order-row{
-    padding: 12px 14px; border-top: 1px solid #EFE9D9; cursor:pointer;
+    padding: 13px 14px; border-top: 1px solid var(--border); cursor:pointer;
     min-height: 44px;
   }
   .order-row:first-child{ border-top:none; }
-  .order-row:active{ background: var(--paper-2); }
+  .order-row:active{ background: var(--bg); }
   .order-row-main{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
   .order-row-phone{
-    font-family:'JetBrains Mono', monospace; direction:ltr; font-weight:700; font-size:16px; color: var(--ink);
+    font-family:'JetBrains Mono', monospace; direction:ltr; unicode-bidi: isolate;
+    font-weight:700; font-size:16px; color: var(--text);
   }
-  .order-row-time{ font-size:10.5px; color: var(--ink-soft); font-weight:600; flex-shrink:0; }
+  .order-row-time{ font-size:10.5px; color: var(--text-secondary); font-weight:600; flex-shrink:0; }
   .order-row-meta{
-    font-size:11.5px; color: var(--ink-soft); margin-top:3px; font-weight:600;
+    font-size:11.5px; color: var(--text-secondary); margin-top:3px; font-weight:600;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .empty-state{
-    text-align:center; color: var(--text-soft);
-    font-size: 13.5px; padding: 30px 16px; font-weight: 600;
+    text-align:center; color: var(--text-secondary);
+    font-size: 13px; padding: 30px 16px; font-weight: 600;
   }
 
   /* ---------- more view ---------- */
   .more-block{
-    background: var(--paper); border-radius: 12px; padding: 16px;
-    margin-bottom: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.25);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    margin-bottom: 14px;
   }
-  .more-block h3{ color: var(--ink); font-size:14px; font-weight:800; margin:0 0 10px; }
+  .more-block h3{ color: var(--text); font-size:13.5px; font-weight:800; margin:0 0 10px; }
   .more-actions{ display:flex; gap:8px; flex-wrap:wrap; }
   .btn-small{
-    background: var(--bg-3);
-    border: 1px solid #4A4437;
-    color: var(--text-hi);
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    color: var(--text);
     border-radius: 8px;
     padding: 10px 14px;
     font-family:'Cairo', sans-serif;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 13px;
     cursor: pointer;
+    min-height:44px;
   }
-  .more-actions .btn-danger{ color: #C23B22; border-color: #C23B22; background:transparent; }
+  .more-actions .btn-danger{ color: var(--error-text); border-color: var(--error-border); background: var(--error-bg); }
   .restaurant-chips{ display:flex; gap:6px; flex-wrap:wrap; }
   .restaurant-chip{
-    font-family:'Cairo',sans-serif; font-weight:700; font-size:12.5px;
-    background: var(--paper-2); border:1px solid #D8D1BE; color: var(--ink);
+    font-family:'Cairo',sans-serif; font-weight:700; font-size:12px;
+    background: var(--bg); border:1px solid var(--border); color: var(--text);
     border-radius: 20px; padding: 6px 13px;
   }
-  .more-footnote{ font-size:11.5px; color: var(--text-soft); text-align:center; margin-top:6px; }
+  .more-footnote{ font-size:11px; color: var(--text-secondary); text-align:center; margin-top:4px; }
 
   /* ---------- bottom navigation ---------- */
   .bottom-nav{
     position: fixed; left:0; right:0; bottom:0; z-index: 800;
     display:flex; align-items:flex-start; justify-content:space-around;
-    background: var(--paper); border-top: 1px solid #E5DFCE;
-    box-shadow: 0 -8px 24px rgba(0,0,0,.25);
+    background: var(--surface); border-top: 1px solid var(--border);
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     max-width: 480px; margin: 0 auto;
   }
   .nav-btn{
     flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
-    background:none; border:none; color: var(--ink-soft);
+    background:none; border:none; color: var(--text-secondary);
     font-family:'Cairo',sans-serif; font-weight:700; font-size:11px;
-    padding: 6px 4px 2px; border-radius:14px; min-height:44px;
+    padding: 6px 4px 2px; border-radius:12px; min-height:44px;
   }
   .nav-btn .nav-icon{ font-size:19px; line-height:1; }
-  .nav-btn.active{ color: var(--stamp); }
-  .nav-btn.scan-btn{ position:relative; }
+  .nav-btn.active{ color: var(--primary); }
+  .nav-btn.scan-btn{ position:relative; color: var(--text); }
   .nav-btn.scan-btn .nav-icon{
     width:46px; height:46px; border-radius:50%;
-    background: var(--stamp); color:#fff;
+    background: var(--primary); color: var(--primary-text-on);
     display:flex; align-items:center; justify-content:center;
-    margin-top:-24px; font-size:21px;
-    box-shadow: 0 6px 16px rgba(194,59,34,.45);
-    border: 3px solid var(--paper);
+    margin-top:-24px; font-size:20px;
+    box-shadow: 0 4px 12px rgba(42,92,138,.35);
+    border: 3px solid var(--surface);
   }
-  .nav-btn.scan-btn{ color: var(--ink); }
 
   /* ---------- toast ---------- */
   .toast{
     position: fixed; bottom: calc(var(--nav-h) + 14px); left: 50%;
     transform: translateX(-50%) translateY(20px);
-    background: var(--paper); color: var(--ink);
-    font-weight: 700; font-size: 14px;
+    background: var(--text); color: var(--surface);
+    font-weight: 700; font-size: 13.5px;
     padding: 10px 20px; border-radius: 30px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.4);
+    box-shadow: 0 8px 20px rgba(0,0,0,.25);
     opacity: 0; pointer-events: none; z-index: 1200;
-    transition: opacity .25s ease, transform .25s ease;
-    max-width: 90vw; text-align:center;
+    transition: opacity .2s ease, transform .2s ease;
+    max-width: 88vw; text-align:center;
   }
   .toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (prefers-reduced-motion: reduce){ .toast{ transition:none; } }
 
   /* ---------- batch review ---------- */
   .batch-list{ list-style:none; margin:0 0 14px; padding:0; max-height: 55vh; overflow-y:auto; }
   .batch-item{
     display:flex; align-items:center; gap:10px;
-    padding: 10px 0; border-top: 1px dashed #C9C1AE;
+    padding: 10px 0; border-top: 1px solid var(--border);
   }
   .batch-item:first-child{ border-top:none; }
   .batch-thumb{
-    width:56px; height:56px; object-fit:cover; border-radius:8px;
-    border:1px solid var(--line); cursor: zoom-in; flex-shrink:0;
+    width:52px; height:52px; object-fit:cover; border-radius:8px;
+    border:1px solid var(--border); cursor: zoom-in; flex-shrink:0;
   }
   .batch-item-body{ flex:1; min-width:0; }
   .batch-phone-input{
-    width:100%; direction: ltr; text-align:left;
-    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:16px;
-    color: var(--ink); border: none; border-bottom: 2px solid #D8D1BE;
+    width:100%; direction: ltr; unicode-bidi: isolate; text-align:left;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:15px;
+    color: var(--text); border: none; border-bottom: 1.5px solid var(--border);
     background: transparent; padding: 4px 2px; outline:none;
   }
-  .batch-phone-input:focus{ border-bottom-color: var(--stamp); }
-  .batch-status{ display:block; font-size:11px; color: var(--ink-soft); margin-top:2px; font-weight:600; }
-  .batch-status.error{ color: var(--stamp); }
+  .batch-phone-input:focus{ border-bottom-color: var(--primary); }
+  .batch-status{ display:block; font-size:11px; color: var(--text-secondary); margin-top:2px; font-weight:600; }
+  .batch-status.error{ color: var(--error-text); }
   .batch-export{ width:100%; }
 
   /* ---------- lightbox (image zoom) ---------- */
   .lightbox{
-    position: fixed; inset:0; background: rgba(10,9,7,.96); z-index: 999;
+    position: fixed; inset:0; background: rgba(10,12,15,.92); z-index: 999;
     display:flex; align-items:center; justify-content:center;
   }
   .lightbox[hidden]{ display:none; }
@@ -356,121 +361,125 @@
     width:100%; max-width:600px; height:auto; cursor: zoom-in;
     transition: width .25s ease;
   }
+  @media (prefers-reduced-motion: reduce){ .lightbox-scroll img{ transition:none; } }
   .lightbox-scroll img.zoomed-in{ width:280%; max-width:none; cursor: zoom-out; }
   .lightbox-close{
     position: fixed; top:16px; left:16px; z-index:1000;
-    width:40px; height:40px; border-radius:50%;
-    background: var(--bg-3); color: var(--text-hi); border:1px solid #4A4437;
+    width:44px; height:44px; border-radius:50%;
+    background: var(--surface); color: var(--text); border:1px solid var(--border);
     font-size:18px; display:flex; align-items:center; justify-content:center;
   }
 
   /* ---------- order detail bottom sheet ---------- */
   .sheet{ position: fixed; inset:0; z-index: 900; display:flex; align-items:flex-end; justify-content:center; }
   .sheet[hidden]{ display:none; }
-  .sheet-backdrop{ position:absolute; inset:0; background: rgba(10,9,7,.7); }
+  .sheet-backdrop{ position:absolute; inset:0; background: rgba(10,12,15,.55); }
   .sheet-panel{
     position: relative; width:100%; max-width:480px;
-    background: var(--paper); color: var(--ink);
-    border-radius: 20px 20px 0 0; padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+    background: var(--surface); color: var(--text);
+    border-radius: 18px 18px 0 0; padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
     max-height: 82vh; overflow-y:auto;
+    border-top: 1px solid var(--border);
   }
-  .sheet-handle{ width:40px; height:4px; border-radius:2px; background:#D8D1BE; margin:6px auto 14px; }
+  .sheet-handle{ width:38px; height:4px; border-radius:2px; background: var(--border); margin:6px auto 14px; }
   .sheet-order-preview{
-    padding:14px; border-radius:10px; background: var(--paper-2); border:1px dashed #C9C1AE;
-    font-family:'JetBrains Mono', monospace; font-size:15px; line-height:1.8;
-    direction:ltr; text-align:left; white-space:pre-line; margin-bottom:16px;
+    padding:14px; border-radius:10px; background: var(--bg); border:1px solid var(--border);
+    font-family:'JetBrains Mono', monospace; font-size:14.5px; line-height:1.8;
+    direction:ltr; unicode-bidi: isolate; text-align:left; white-space:pre-line; margin-bottom:16px;
     overflow-wrap:break-word;
   }
   .sheet-primary-actions{ display:flex; gap:10px; margin-bottom:10px; }
   .sheet-primary-actions a{
     flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
-    text-decoration:none; border-radius:12px; padding:14px 10px;
-    font-family:'Cairo',sans-serif; font-weight:800; font-size:14.5px; min-height:44px;
+    text-decoration:none; border-radius:10px; padding:14px 10px;
+    font-family:'Cairo',sans-serif; font-weight:800; font-size:14px; min-height:44px;
   }
   .sheet-wa-btn{ background:#25D366; color:#fff; }
   .sheet-wa-btn.disabled{ pointer-events:none; opacity:.5; }
-  .sheet-call-btn{ background: var(--stamp); color:#fff; }
+  .sheet-call-btn{ background: var(--primary); color: var(--primary-text-on); }
   .sheet-secondary-actions{ display:flex; gap:10px; margin-bottom:14px; }
   .sheet-secondary-actions button{
-    flex:1; background:transparent; border:2px solid #D8D1BE; color: var(--ink-soft);
-    border-radius:12px; padding:12px 10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px;
+    flex:1; background:transparent; border:1.5px solid var(--border); color: var(--text-secondary);
+    border-radius:10px; padding:12px 10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13px;
     min-height:44px; cursor:pointer;
   }
   .sheet-delete-btn{
-    width:100%; background:transparent; border:none; color:#C23B22;
-    font-family:'Cairo',sans-serif; font-weight:700; font-size:13.5px; padding:10px; cursor:pointer;
+    width:100%; background: var(--error-bg); border: 1px solid var(--error-border); color: var(--error-text);
+    border-radius:10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13px; padding:11px; cursor:pointer;
     min-height:44px;
   }
 </style>
+
 </head>
 <body>
 <div class="app">
 
   <header class="app-header">
-    <div class="stamp-logo">Scanly <span aria-hidden="true">🛵</span></div>
+    <div class="stamp-logo">Scanly <span aria-hidden="true">ðŸ›µ</span></div>
+    <p class="header-status" id="headerStatus"></p>
   </header>
 
   <main>
     <!-- ============ SCAN VIEW ============ -->
     <section class="view" id="viewScan">
-      <p class="tagline">صوّر الريسيت، ياخدلك رقم العميل في ثانية</p>
+      <p class="tagline">ØµÙˆÙ‘Ø± Ø§Ù„Ø±ÙŠØ³ÙŠØªØŒ ÙŠØ§Ø®Ø¯Ù„Ùƒ Ø±Ù‚Ù… Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙÙŠ Ø«Ø§Ù†ÙŠØ©</p>
 
       <section class="receipt capture-card" id="captureCard">
         <input type="file" id="fileInputCamera" accept="image/*" capture="environment">
         <input type="file" id="fileInputGallery" accept="image/*" multiple>
         <div class="capture-choices">
-          <button class="btn-primary" id="cameraBtn">📷 صوّر دلوقتي</button>
-          <button class="btn-primary btn-alt" id="galleryBtn">🖼 اختار من المعرض</button>
+          <button class="btn-primary" id="cameraBtn">ðŸ“· ØµÙˆÙ‘Ø± Ø¯Ù„ÙˆÙ‚ØªÙŠ</button>
+          <button class="btn-primary btn-alt" id="galleryBtn">ðŸ–¼ Ø§Ø®ØªØ§Ø± Ù…Ù† Ø§Ù„Ù…Ø¹Ø±Ø¶</button>
         </div>
         <div class="preview-wrap" id="previewWrap" hidden>
-          <img id="previewImg" alt="صورة الريسيت">
-          <p class="zoom-hint">دوس على الصورة للتكبير ومطابقة الرقم</p>
+          <img id="previewImg" alt="ØµÙˆØ±Ø© Ø§Ù„Ø±ÙŠØ³ÙŠØª">
+          <p class="zoom-hint">Ø¯ÙˆØ³ Ø¹Ù„Ù‰ Ø§Ù„ØµÙˆØ±Ø© Ù„Ù„ØªÙƒØ¨ÙŠØ± ÙˆÙ…Ø·Ø§Ø¨Ù‚Ø© Ø§Ù„Ø±Ù‚Ù…</p>
         </div>
         <div class="status" id="statusText" hidden></div>
       </section>
 
       <section class="receipt batch-card" id="batchCard" hidden>
-        <p class="result-label">راجع كل رقم قبل الحفظ (<span id="batchCount">0</span> صورة):</p>
+        <p class="result-label">Ø±Ø§Ø¬Ø¹ ÙƒÙ„ Ø±Ù‚Ù… Ù‚Ø¨Ù„ Ø§Ù„Ø­ÙØ¸ (<span id="batchCount">0</span> ØµÙˆØ±Ø©):</p>
         <ul class="batch-list" id="batchList"></ul>
         <div class="result-actions">
-          <button class="btn-primary" id="batchSaveBtn">💾 حفظ الكل</button>
-          <button class="btn-ghost" id="batchDiscardBtn">إلغاء</button>
+          <button class="btn-primary" id="batchSaveBtn">ðŸ’¾ Ø­ÙØ¸ Ø§Ù„ÙƒÙ„</button>
+          <button class="btn-ghost" id="batchDiscardBtn">Ø¥Ù„ØºØ§Ø¡</button>
         </div>
-        <button class="btn-small batch-export" id="batchExportBtn">⬇️ تنزيل نتائج الدفعة دي</button>
+        <button class="btn-small batch-export" id="batchExportBtn">â¬‡ï¸ ØªÙ†Ø²ÙŠÙ„ Ù†ØªØ§Ø¦Ø¬ Ø§Ù„Ø¯ÙØ¹Ø© Ø¯ÙŠ</button>
       </section>
 
       <section class="receipt result-card" id="resultCard" hidden>
-        <p class="result-label">الرقم اللي اتقرا من الريسيت:</p>
+        <p class="result-label">Ø§Ù„Ø±Ù‚Ù… Ø§Ù„Ù„ÙŠ Ø§ØªÙ‚Ø±Ø§ Ù…Ù† Ø§Ù„Ø±ÙŠØ³ÙŠØª:</p>
         <input type="tel" id="phoneInput" class="phone-input" inputmode="numeric" maxlength="14" placeholder="01xxxxxxxxx">
-        <p class="hint" id="resultHint">لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ</p>
+        <p class="hint" id="resultHint">Ù„Ùˆ Ø§Ù„Ø±Ù‚Ù… ØºÙ„Ø· Ø£Ùˆ Ù†Ø§Ù‚ØµØŒ Ø¹Ø¯Ù‘Ù„Ù‡ ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù‚Ø¨Ù„ Ø§Ù„Ø­ÙØ¸</p>
         <div class="alt-wrap" id="altWrap" hidden>
-          <span class="alt-label">أرقام تانية اتلاقت في نفس الصورة:</span>
+          <span class="alt-label">Ø£Ø±Ù‚Ø§Ù… ØªØ§Ù†ÙŠØ© Ø§ØªÙ„Ø§Ù‚Øª ÙÙŠ Ù†ÙØ³ Ø§Ù„ØµÙˆØ±Ø©:</span>
           <div class="alt-chips" id="altChips"></div>
         </div>
 
-        <label class="result-label field-title">العنوان (عمارة | دور | شقة)</label>
+        <label class="result-label field-title">Ø§Ù„Ø¹Ù†ÙˆØ§Ù† (Ø¹Ù…Ø§Ø±Ø© | Ø¯ÙˆØ± | Ø´Ù‚Ø©)</label>
         <div class="addr-row">
-          <input type="text" id="addrBuilding" class="field-input" inputmode="numeric" placeholder="عمارة">
-          <input type="text" id="addrFloor" class="field-input" inputmode="numeric" placeholder="دور">
-          <input type="text" id="addrApt" class="field-input" inputmode="numeric" placeholder="شقة">
+          <input type="text" id="addrBuilding" class="field-input" inputmode="numeric" placeholder="Ø¹Ù…Ø§Ø±Ø©">
+          <input type="text" id="addrFloor" class="field-input" inputmode="numeric" placeholder="Ø¯ÙˆØ±">
+          <input type="text" id="addrApt" class="field-input" inputmode="numeric" placeholder="Ø´Ù‚Ø©">
         </div>
 
-        <label class="result-label field-title">المطعم / المنطقة / الدفع</label>
+        <label class="result-label field-title">Ø§Ù„Ù…Ø·Ø¹Ù… / Ø§Ù„Ù…Ù†Ø·Ù‚Ø© / Ø§Ù„Ø¯ÙØ¹</label>
         <div class="meta-row">
           <select id="restaurantSelect" class="field-input meta-select"></select>
-          <input type="text" id="areaTextInput" class="field-input" placeholder="المنطقة">
-          <input type="text" id="paymentTextInput" class="field-input" placeholder="فيزا أو 247ج">
+          <input type="text" id="areaTextInput" class="field-input" placeholder="Ø§Ù„Ù…Ù†Ø·Ù‚Ø©">
+          <input type="text" id="paymentTextInput" class="field-input" placeholder="ÙÙŠØ²Ø§ Ø£Ùˆ 247Ø¬">
         </div>
 
         <div class="order-preview" id="orderPreview"></div>
 
         <div class="result-actions">
-          <button class="btn-primary" id="saveBtn">💾 حفظ الأوردر</button>
-          <button class="btn-ghost" id="discardBtn">إلغاء</button>
+          <button class="btn-primary" id="saveBtn">ðŸ’¾ Ø­ÙØ¸ Ø§Ù„Ø£ÙˆØ±Ø¯Ø±</button>
+          <button class="btn-ghost" id="discardBtn">Ø¥Ù„ØºØ§Ø¡</button>
         </div>
         <div class="result-actions">
-          <a class="btn-small btn-wa" id="waBtn" target="_blank" rel="noopener">💬 واتساب العميل</a>
-          <button class="btn-copy" id="copyOrderBtn">📋 نسخ الأوردر</button>
+          <a class="btn-small btn-wa" id="waBtn" target="_blank" rel="noopener">ðŸ’¬ ÙˆØ§ØªØ³Ø§Ø¨ Ø§Ù„Ø¹Ù…ÙŠÙ„</a>
+          <button class="btn-copy" id="copyOrderBtn">ðŸ“‹ Ù†Ø³Ø® Ø§Ù„Ø£ÙˆØ±Ø¯Ø±</button>
         </div>
       </section>
     </section>
@@ -478,33 +487,33 @@
     <!-- ============ ORDERS VIEW ============ -->
     <section class="view" id="viewOrders" hidden>
       <div class="orders-toolbar">
-        <input type="search" id="orderSearch" class="order-search" placeholder="🔍 دور برقم أو منطقة أو مطعم">
+        <input type="search" id="orderSearch" class="order-search" placeholder="ðŸ” Ø¯ÙˆØ± Ø¨Ø±Ù‚Ù… Ø£Ùˆ Ù…Ù†Ø·Ù‚Ø© Ø£Ùˆ Ù…Ø·Ø¹Ù…">
       </div>
-      <p class="orders-count">إجمالي الأوردرات: <span id="ordersCount">0</span></p>
+      <p class="orders-count">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø£ÙˆØ±Ø¯Ø±Ø§Øª: <span id="ordersCount">0</span></p>
       <ul class="order-list" id="ordersList"></ul>
-      <p class="empty-state" id="ordersEmptyState">لسه مفيش أوردرات محفوظة — روح شاشة المسح وابدأ</p>
+      <p class="empty-state" id="ordersEmptyState">Ù„Ø³Ù‡ Ù…ÙÙŠØ´ Ø£ÙˆØ±Ø¯Ø±Ø§Øª Ù…Ø­ÙÙˆØ¸Ø© â€” Ø±ÙˆØ­ Ø´Ø§Ø´Ø© Ø§Ù„Ù…Ø³Ø­ ÙˆØ§Ø¨Ø¯Ø£</p>
     </section>
 
     <!-- ============ MORE VIEW ============ -->
     <section class="view" id="viewMore" hidden>
       <div class="more-block">
-        <h3>تصدير ونسخ</h3>
+        <h3>ØªØµØ¯ÙŠØ± ÙˆÙ†Ø³Ø®</h3>
         <div class="more-actions">
-          <button class="btn-small" id="copyAllBtn">📋 نسخ كل الأرقام</button>
-          <button class="btn-small" id="csvBtn">⬇️ تنزيل CSV</button>
+          <button class="btn-small" id="copyAllBtn">ðŸ“‹ Ù†Ø³Ø® ÙƒÙ„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù…</button>
+          <button class="btn-small" id="csvBtn">â¬‡ï¸ ØªÙ†Ø²ÙŠÙ„ CSV</button>
         </div>
       </div>
       <div class="more-block">
-        <h3>المطاعم المحفوظة</h3>
+        <h3>Ø§Ù„Ù…Ø·Ø§Ø¹Ù… Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø©</h3>
         <div class="restaurant-chips" id="restaurantChips"></div>
       </div>
       <div class="more-block">
-        <h3>منطقة الخطر</h3>
+        <h3>Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø®Ø·Ø±</h3>
         <div class="more-actions">
-          <button class="btn-small btn-danger" id="clearBtn">🗑 مسح كل السجل</button>
+          <button class="btn-small btn-danger" id="clearBtn">ðŸ—‘ Ù…Ø³Ø­ ÙƒÙ„ Ø§Ù„Ø³Ø¬Ù„</button>
         </div>
       </div>
-      <p class="more-footnote">Scanly 🛵 — بياناتك محفوظة على جهازك بس، مفيش سيرفر بيشوفها</p>
+      <p class="more-footnote">Scanly ðŸ›µ â€” Ø¨ÙŠØ§Ù†Ø§ØªÙƒ Ù…Ø­ÙÙˆØ¸Ø© Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø²Ùƒ Ø¨Ø³ØŒ Ù…ÙÙŠØ´ Ø³ÙŠØ±ÙØ± Ø¨ÙŠØ´ÙˆÙÙ‡Ø§</p>
     </section>
   </main>
 
@@ -513,16 +522,16 @@
 
 <nav class="bottom-nav">
   <button class="nav-btn" data-view="orders">
-    <span class="nav-icon" aria-hidden="true">📋</span>
-    الأوردرات
+    <span class="nav-icon" aria-hidden="true">ðŸ“‹</span>
+    Ø§Ù„Ø£ÙˆØ±Ø¯Ø±Ø§Øª
   </button>
   <button class="nav-btn scan-btn active" data-view="scan">
-    <span class="nav-icon" aria-hidden="true">📷</span>
-    المسح
+    <span class="nav-icon" aria-hidden="true">ðŸ“·</span>
+    Ø§Ù„Ù…Ø³Ø­
   </button>
   <button class="nav-btn" data-view="more">
-    <span class="nav-icon" aria-hidden="true">⋯</span>
-    المزيد
+    <span class="nav-icon" aria-hidden="true">â‹¯</span>
+    Ø§Ù„Ù…Ø²ÙŠØ¯
   </button>
 </nav>
 
@@ -532,21 +541,21 @@
     <div class="sheet-handle"></div>
     <div class="sheet-order-preview" id="sheetPreview"></div>
     <div class="sheet-primary-actions">
-      <a class="sheet-wa-btn" id="sheetWaBtn" target="_blank" rel="noopener">💬 واتساب</a>
-      <a class="sheet-call-btn" id="sheetCallBtn">📞 اتصال</a>
+      <a class="sheet-wa-btn" id="sheetWaBtn" target="_blank" rel="noopener">ðŸ’¬ ÙˆØ§ØªØ³Ø§Ø¨</a>
+      <a class="sheet-call-btn" id="sheetCallBtn">ðŸ“ž Ø§ØªØµØ§Ù„</a>
     </div>
     <div class="sheet-secondary-actions">
-      <button id="sheetEditBtn">✏️ تعديل</button>
-      <button id="sheetCopyBtn">📄 نسخ الأوردر</button>
+      <button id="sheetEditBtn">âœï¸ ØªØ¹Ø¯ÙŠÙ„</button>
+      <button id="sheetCopyBtn">ðŸ“„ Ù†Ø³Ø® Ø§Ù„Ø£ÙˆØ±Ø¯Ø±</button>
     </div>
-    <button class="sheet-delete-btn" id="sheetDeleteBtn">🗑 حذف الأوردر ده</button>
+    <button class="sheet-delete-btn" id="sheetDeleteBtn">ðŸ—‘ Ø­Ø°Ù Ø§Ù„Ø£ÙˆØ±Ø¯Ø± Ø¯Ù‡</button>
   </div>
 </div>
 
 <div class="lightbox" id="lightbox" hidden>
-  <button class="lightbox-close" id="lightboxClose">✕</button>
+  <button class="lightbox-close" id="lightboxClose" aria-label="Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØµÙˆØ±Ø©">âœ•</button>
   <div class="lightbox-scroll" id="lightboxScroll">
-    <img id="lightboxImg" alt="تكبير الريسيت">
+    <img id="lightboxImg" alt="ØªÙƒØ¨ÙŠØ± Ø§Ù„Ø±ÙŠØ³ÙŠØª">
   </div>
 </div>
 
@@ -555,6 +564,7 @@ const STORAGE_KEY = 'phone-log';
 const RESTAURANTS_KEY = 'restaurant-list';
 
 const els = {
+  headerStatus: document.getElementById('headerStatus'),
   fileInputCamera: document.getElementById('fileInputCamera'),
   fileInputGallery: document.getElementById('fileInputGallery'),
   cameraBtn: document.getElementById('cameraBtn'),
@@ -610,11 +620,11 @@ const els = {
 };
 
 let log = [];
-let restaurants = ['اما'];
+let restaurants = ['Ø§Ù…Ø§'];
 let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
 let sheetIndex = null; // which log entry the open bottom sheet is showing
 
-// escapes any text before it's injected via innerHTML — applies to anything
+// escapes any text before it's injected via innerHTML â€” applies to anything
 // that came from Gemini's read of a photo, or from a user-typed field
 function escapeHTML(str){
   const div = document.createElement('div');
@@ -622,7 +632,7 @@ function escapeHTML(str){
   return div.innerHTML;
 }
 
-// ---------- storage (plain browser localStorage — works on any real website) ----------
+// ---------- storage (plain browser localStorage â€” works on any real website) ----------
 async function loadLog(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -637,8 +647,14 @@ async function saveLog(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(log));
   }catch(e){
-    showToast('تعذّر الحفظ — جرّب تاني');
+    showToast('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø­ÙØ¸ â€” Ø¬Ø±Ù‘Ø¨ ØªØ§Ù†ÙŠ');
   }
+  updateHeaderStatus();
+}
+function updateHeaderStatus(){
+  els.headerStatus.textContent = log.length
+    ? `${log.length} Ø£ÙˆØ±Ø¯Ø± Ù…Ø­ÙÙˆØ¸`
+    : 'Ø¬Ø§Ù‡Ø² â€” ØµÙˆÙ‘Ø± Ø£ÙˆÙ„ Ø±ÙŠØ³ÙŠØª';
 }
 
 function loadRestaurants(){
@@ -647,7 +663,7 @@ function loadRestaurants(){
     const parsed = raw ? JSON.parse(raw) : null;
     if (Array.isArray(parsed) && parsed.length) return parsed;
   }catch(e){}
-  return ['اما'];
+  return ['Ø§Ù…Ø§'];
 }
 function saveRestaurants(){
   try{ localStorage.setItem(RESTAURANTS_KEY, JSON.stringify(restaurants)); }catch(e){}
@@ -682,11 +698,11 @@ function renderRestaurantOptions(selected){
   const options = restaurants.map(r =>
     `<option value="${escapeHTML(r)}" ${r === selected ? 'selected' : ''}>${escapeHTML(r)}</option>`
   ).join('');
-  els.restaurantSelect.innerHTML = options + `<option value="__new__">+ مطعم جديد</option>`;
+  els.restaurantSelect.innerHTML = options + `<option value="__new__">+ Ù…Ø·Ø¹Ù… Ø¬Ø¯ÙŠØ¯</option>`;
 }
 els.restaurantSelect.addEventListener('change', () => {
   if (els.restaurantSelect.value === '__new__'){
-    const name = prompt('اسم المطعم الجديد؟');
+    const name = prompt('Ø§Ø³Ù… Ø§Ù„Ù…Ø·Ø¹Ù… Ø§Ù„Ø¬Ø¯ÙŠØ¯ØŸ');
     if (name && name.trim()){
       restaurants.push(name.trim());
       saveRestaurants();
@@ -735,9 +751,9 @@ function renderOrdersList(){
   els.ordersList.innerHTML = filtered.map(({entry, i}) => {
     const safePhone = escapeHTML(entry.phone);
     const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
-    const metaParts = [entry.restaurant, entry.area, address ? `🏠 ${address}` : '', entry.payment].filter(Boolean);
+    const metaParts = [entry.restaurant, entry.area, address ? `ðŸ  ${address}` : '', entry.payment].filter(Boolean);
     const metaLine = metaParts.length
-      ? `<div class="order-row-meta">${metaParts.map(escapeHTML).join(' • ')}</div>`
+      ? `<div class="order-row-meta">${metaParts.map(escapeHTML).join(' â€¢ ')}</div>`
       : '';
     return `
       <li class="order-row" data-idx="${i}">
@@ -789,7 +805,7 @@ els.sheetCopyBtn.addEventListener('click', async () => {
   if (sheetIndex === null) return;
   const entry = log[sheetIndex];
   await navigator.clipboard.writeText(orderLinesFromEntry(entry).join('\n'));
-  showToast('اتنسخ الأوردر ✅');
+  showToast('Ø§ØªÙ†Ø³Ø® Ø§Ù„Ø£ÙˆØ±Ø¯Ø± âœ…');
 });
 
 els.sheetEditBtn.addEventListener('click', () => {
@@ -802,15 +818,15 @@ els.sheetEditBtn.addEventListener('click', () => {
 
 els.sheetDeleteBtn.addEventListener('click', async () => {
   if (sheetIndex === null) return;
-  if (!confirm('تمسح الأوردر ده؟')) return;
+  if (!confirm('ØªÙ…Ø³Ø­ Ø§Ù„Ø£ÙˆØ±Ø¯Ø± Ø¯Ù‡ØŸ')) return;
   log.splice(sheetIndex, 1);
   await saveLog();
   closeOrderSheet();
   renderOrdersList();
-  showToast('اتمسح');
+  showToast('Ø§ØªÙ…Ø³Ø­');
 });
 
-// ---------- image resize (keeps upload small/fast on mobile data — phone-only extraction doesn't need a huge image) ----------
+// ---------- image resize (keeps upload small/fast on mobile data â€” phone-only extraction doesn't need a huge image) ----------
 function resizeImageToBase64(file, maxDim = 1100, quality = 0.75){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -898,19 +914,19 @@ function updateOrderPreview(){
 
 els.copyOrderBtn.addEventListener('click', async () => {
   const lines = buildOrderLines();
-  if (!lines.some(l => l !== '')){ showToast('مفيش بيانات تتنسخ'); return; }
+  if (!lines.some(l => l !== '')){ showToast('Ù…ÙÙŠØ´ Ø¨ÙŠØ§Ù†Ø§Øª ØªØªÙ†Ø³Ø®'); return; }
   await navigator.clipboard.writeText(lines.join('\n'));
-  showToast('اتنسخ الأوردر ✅');
+  showToast('Ø§ØªÙ†Ø³Ø® Ø§Ù„Ø£ÙˆØ±Ø¯Ø± âœ…');
 });
 
 function openResult(phone, alternates = []){
   editingIndex = null;
-  els.saveBtn.textContent = '💾 حفظ الأوردر';
+  els.saveBtn.textContent = 'ðŸ’¾ Ø­ÙØ¸ Ø§Ù„Ø£ÙˆØ±Ø¯Ø±';
   els.resultCard.hidden = false;
   els.phoneInput.value = phone || '';
   els.resultHint.textContent = phone
-    ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
-    : 'مالقتش رقم في الصورة — اكتبه يدويًا';
+    ? 'Ù„Ùˆ Ø§Ù„Ø±Ù‚Ù… ØºÙ„Ø· Ø£Ùˆ Ù†Ø§Ù‚ØµØŒ Ø¹Ø¯Ù‘Ù„Ù‡ ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù‚Ø¨Ù„ Ø§Ù„Ø­ÙØ¸'
+    : 'Ù…Ø§Ù„Ù‚ØªØ´ Ø±Ù‚Ù… ÙÙŠ Ø§Ù„ØµÙˆØ±Ø© â€” Ø§ÙƒØªØ¨Ù‡ ÙŠØ¯ÙˆÙŠÙ‹Ø§';
   renderAlternates(alternates);
   els.phoneInput.classList.remove('revealed');
   requestAnimationFrame(() => {
@@ -933,13 +949,13 @@ function openEditEntry(i){
   const entry = log[i];
   if (!entry) return;
   editingIndex = i;
-  els.saveBtn.textContent = '💾 حفظ التعديل';
+  els.saveBtn.textContent = 'ðŸ’¾ Ø­ÙØ¸ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„';
   els.batchCard.hidden = true;
   els.previewWrap.hidden = true;
   els.resultCard.hidden = false;
 
   els.phoneInput.value = entry.phone || '';
-  els.resultHint.textContent = 'بتعدّل أوردر محفوظ — احفظ لما تخلص';
+  els.resultHint.textContent = 'Ø¨ØªØ¹Ø¯Ù‘Ù„ Ø£ÙˆØ±Ø¯Ø± Ù…Ø­ÙÙˆØ¸ â€” Ø§Ø­ÙØ¸ Ù„Ù…Ø§ ØªØ®Ù„Øµ';
   renderAlternates([]);
   els.phoneInput.classList.add('revealed');
 
@@ -985,14 +1001,14 @@ async function handleFile(file){
   setStatus('');
 
   try{
-    setStatus('بيقرا الريسيت...');
+    setStatus('Ø¨ÙŠÙ‚Ø±Ø§ Ø§Ù„Ø±ÙŠØ³ÙŠØª...');
     els.statusText.insertAdjacentHTML('beforeend', '<span class="spinner"></span>');
     const base64 = await resizeImageToBase64(file);
     const { phone, alternates } = await extractPhone(base64);
     setStatus('');
     openResult(phone, alternates);
   }catch(err){
-    setStatus('حصلت مشكلة في القراءة — جرّب تاني، أو اكتب الرقم يدويًا', true);
+    setStatus('Ø­ØµÙ„Øª Ù…Ø´ÙƒÙ„Ø© ÙÙŠ Ø§Ù„Ù‚Ø±Ø§Ø¡Ø© â€” Ø¬Ø±Ù‘Ø¨ ØªØ§Ù†ÙŠØŒ Ø£Ùˆ Ø§ÙƒØªØ¨ Ø§Ù„Ø±Ù‚Ù… ÙŠØ¯ÙˆÙŠÙ‹Ø§', true);
     openResult('', []);
   }
 }
@@ -1008,7 +1024,7 @@ els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src))
 els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
 els.lightboxClose.addEventListener('click', () => { els.lightbox.hidden = true; });
 
-// ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
+// ---------- batch mode (multiple gallery photos at once â€” phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
 let batchState = [];
 
 async function handleBatch(files){
@@ -1035,7 +1051,7 @@ async function handleBatch(files){
 }
 
 function batchRowHTML(item, i){
-  const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: 'حصلت مشكلة في القراءة' };
+  const labels = { pending: 'ÙÙŠ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±...', loading: 'Ø¨ÙŠÙ‚Ø±Ø§...', done: '', empty: 'Ù…Ø§Ù„Ù‚ØªØ´ Ø±Ù‚Ù… â€” Ø§ÙƒØªØ¨Ù‡ ÙŠØ¯ÙˆÙŠÙ‹Ø§', error: 'Ø­ØµÙ„Øª Ù…Ø´ÙƒÙ„Ø© ÙÙŠ Ø§Ù„Ù‚Ø±Ø§Ø¡Ø©' };
   return `
     <li class="batch-item" data-row="${i}">
       <img class="batch-thumb" src="${item.thumb}" data-idx="${i}">
@@ -1074,7 +1090,7 @@ els.batchList.addEventListener('input', (e) => {
 
 els.batchSaveBtn.addEventListener('click', async () => {
   const valid = batchState.filter(b => b.phone);
-  if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
+  if (!valid.length){ showToast('Ù…ÙÙŠØ´ Ø£Ø±Ù‚Ø§Ù… ØªØªØ­ÙØ¸'); return; }
   valid.forEach(b => log.unshift({
     phone: b.phone,
     savedAt: new Date().toISOString(),
@@ -1084,7 +1100,7 @@ els.batchSaveBtn.addEventListener('click', async () => {
   await saveLog();
   els.batchCard.hidden = true;
   batchState = [];
-  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات`);
+  showToast(`Ø§ØªØ­ÙØ¸ ${valid.length} Ø±Ù‚Ù… âœ… â€” ØªÙ‚Ø¯Ø± ØªØ¶ÙŠÙ Ø§Ù„Ø¹Ù†ÙˆØ§Ù†/Ø§Ù„Ù…Ø·Ø¹Ù…/Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ù…Ù† Ø´Ø§Ø´Ø© Ø§Ù„Ø£ÙˆØ±Ø¯Ø±Ø§Øª`);
 });
 
 els.batchDiscardBtn.addEventListener('click', () => {
@@ -1094,8 +1110,8 @@ els.batchDiscardBtn.addEventListener('click', () => {
 
 els.batchExportBtn.addEventListener('click', () => {
   const valid = batchState.filter(b => b.phone);
-  if (!valid.length){ showToast('مفيش أرقام تتصدّر'); return; }
-  const rows = ['الرقم', ...valid.map(b => b.phone)];
+  if (!valid.length){ showToast('Ù…ÙÙŠØ´ Ø£Ø±Ù‚Ø§Ù… ØªØªØµØ¯Ù‘Ø±'); return; }
+  const rows = ['Ø§Ù„Ø±Ù‚Ù…', ...valid.map(b => b.phone)];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1106,7 +1122,7 @@ els.batchExportBtn.addEventListener('click', () => {
 els.saveBtn.addEventListener('click', async () => {
   const phone = els.phoneInput.value.trim();
   if (!phone){
-    showToast('اكتب الرقم الأول');
+    showToast('Ø§ÙƒØªØ¨ Ø§Ù„Ø±Ù‚Ù… Ø§Ù„Ø£ÙˆÙ„');
     return;
   }
   const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
@@ -1126,11 +1142,11 @@ els.saveBtn.addEventListener('click', async () => {
     log.unshift(entryData);
   }
   editingIndex = null;
-  els.saveBtn.textContent = '💾 حفظ الأوردر';
+  els.saveBtn.textContent = 'ðŸ’¾ Ø­ÙØ¸ Ø§Ù„Ø£ÙˆØ±Ø¯Ø±';
   await saveLog();
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
-  showToast('اتحفظ ✅');
+  showToast('Ø§ØªØ­ÙØ¸ âœ…');
   switchView('orders');
 });
 
@@ -1138,17 +1154,17 @@ els.discardBtn.addEventListener('click', () => {
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
   editingIndex = null;
-  els.saveBtn.textContent = '💾 حفظ الأوردر';
+  els.saveBtn.textContent = 'ðŸ’¾ Ø­ÙØ¸ Ø§Ù„Ø£ÙˆØ±Ø¯Ø±';
 });
 
 els.copyAllBtn.addEventListener('click', async () => {
   const text = log.map(e => e.phone).join('\n');
   await navigator.clipboard.writeText(text);
-  showToast('اتنسخت كل الأرقام ✅');
+  showToast('Ø§ØªÙ†Ø³Ø®Øª ÙƒÙ„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… âœ…');
 });
 
 els.csvBtn.addEventListener('click', () => {
-  const rows = ['الرقم,التاريخ,عمارة,دور,شقة,المطعم,المنطقة,الدفع', ...log.map(e =>
+  const rows = ['Ø§Ù„Ø±Ù‚Ù…,Ø§Ù„ØªØ§Ø±ÙŠØ®,Ø¹Ù…Ø§Ø±Ø©,Ø¯ÙˆØ±,Ø´Ù‚Ø©,Ø§Ù„Ù…Ø·Ø¹Ù…,Ø§Ù„Ù…Ù†Ø·Ù‚Ø©,Ø§Ù„Ø¯ÙØ¹', ...log.map(e =>
     `${e.phone},${formatTime(e.savedAt)},${e.building || ''},${e.floor || ''},${e.apt || ''},${e.restaurant || ''},${e.area || ''},${e.payment || ''}`
   )];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1159,17 +1175,18 @@ els.csvBtn.addEventListener('click', () => {
 });
 
 els.clearBtn.addEventListener('click', async () => {
-  if (!confirm('تمسح كل الأرقام المحفوظة؟ الخطوة دي مش هترجع')) return;
+  if (!confirm('ØªÙ…Ø³Ø­ ÙƒÙ„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø©ØŸ Ø§Ù„Ø®Ø·ÙˆØ© Ø¯ÙŠ Ù…Ø´ Ù‡ØªØ±Ø¬Ø¹')) return;
   log = [];
   await saveLog();
   renderOrdersList();
-  showToast('اتمسح الكل');
+  showToast('Ø§ØªÙ…Ø³Ø­ Ø§Ù„ÙƒÙ„');
 });
 
 // ---------- init ----------
 (async () => {
   log = await loadLog();
   restaurants = loadRestaurants();
+  updateHeaderStatus();
   switchView('scan');
 })();
 </script>
