@@ -627,6 +627,59 @@ let restaurants = ['اما'];
 let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
 let sheetIndex = null; // which log entry the open bottom sheet is showing
 
+// ---------- Android Back navigation state ----------
+// Tracks which UI "layers" (sheet/lightbox/batch/result/non-scan view) are currently open,
+// and keeps a SINGLE extra history entry pushed whenever any layer is open, so the hardware
+// Back button closes the topmost layer instead of exiting the app. See layerOpened/layerClosedViaUI.
+let currentView = 'scan';
+let openLayers = [];
+let historyArmed = false;
+let suppressPopstate = false;
+let pendingHistorySettle = false;
+
+function scheduleHistorySettle(){
+  if (pendingHistorySettle) return;
+  pendingHistorySettle = true;
+  Promise.resolve().then(() => {
+    pendingHistorySettle = false;
+    const shouldBeArmed = openLayers.length > 0;
+    if (shouldBeArmed && !historyArmed){
+      history.pushState({ scanlyLayer: true }, '');
+      historyArmed = true;
+    }else if (!shouldBeArmed && historyArmed){
+      historyArmed = false;
+      suppressPopstate = true;
+      history.back();
+    }
+  });
+}
+// call when a layer OPENS (sheet/lightbox/batch/result/non-scan view)
+function layerOpened(name){
+  openLayers.push(name);
+  scheduleHistorySettle();
+}
+// call when a layer is closed via its OWN UI control (button/backdrop) — NOT via hardware Back
+function layerClosedViaUI(name){
+  const i = openLayers.lastIndexOf(name);
+  if (i !== -1) openLayers.splice(i, 1);
+  scheduleHistorySettle();
+}
+// dispatches a REAL hardware/gesture Back press to the same close logic used by each layer's own Cancel/Close button
+function closeLayerByName(name){
+  if (name === 'lightbox') closeLightbox(true);
+  else if (name === 'sheet') closeOrderSheet(true);
+  else if (name === 'batch') discardBatch(true);
+  else if (name === 'result') discardResult(true);
+  else if (name === 'view') switchView('scan', true);
+}
+window.addEventListener('popstate', () => {
+  if (suppressPopstate){ suppressPopstate = false; historyArmed = false; return; }
+  historyArmed = false;
+  const top = openLayers.pop();
+  if (top) closeLayerByName(top);
+  scheduleHistorySettle();
+});
+
 // escapes any text before it's injected via innerHTML — applies to anything
 // that came from Gemini's read of a photo, or from a user-typed field
 function escapeHTML(str){
@@ -683,7 +736,8 @@ function showToast(msg){
 
 // ---------- bottom navigation / view switching ----------
 const VIEWS = { scan: els.viewScan, orders: els.viewOrders, more: els.viewMore };
-function switchView(name){
+function switchView(name, fromBack){
+  const prevView = currentView;
   Object.entries(VIEWS).forEach(([key, el]) => { el.hidden = key !== name; });
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === name);
@@ -691,6 +745,13 @@ function switchView(name){
   if (name === 'orders') renderOrdersList();
   if (name === 'more') renderRestaurantChips();
   window.scrollTo(0, 0);
+  currentView = name;
+
+  if (!fromBack){
+    if (prevView === 'scan' && name !== 'scan') layerOpened('view');
+    else if (prevView !== 'scan' && name === 'scan') layerClosedViaUI('view');
+    // lateral move between Orders <-> More stays at the same depth — no history change needed
+  }
 }
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
@@ -797,12 +858,14 @@ function openOrderSheet(i){
   }
 
   els.orderSheet.hidden = false;
+  layerOpened('sheet');
 }
-function closeOrderSheet(){
+function closeOrderSheet(fromBack){
   els.orderSheet.hidden = true;
   sheetIndex = null;
+  if (!fromBack) layerClosedViaUI('sheet');
 }
-els.sheetBackdrop.addEventListener('click', closeOrderSheet);
+els.sheetBackdrop.addEventListener('click', () => closeOrderSheet());
 
 els.sheetCopyBtn.addEventListener('click', async () => {
   if (sheetIndex === null) return;
@@ -946,6 +1009,7 @@ function openResult(phone, alternates = []){
   updateOrderPreview();
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  layerOpened('result');
 }
 
 function openEditEntry(i){
@@ -953,7 +1017,7 @@ function openEditEntry(i){
   if (!entry) return;
   editingIndex = i;
   els.saveBtn.textContent = '💾 حفظ التعديل';
-  els.batchCard.hidden = true;
+  discardBatch();
   els.previewWrap.hidden = true;
   els.resultCard.hidden = false;
 
@@ -975,6 +1039,7 @@ function openEditEntry(i){
   updateOrderPreview();
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  layerOpened('result');
 }
 
 els.cameraBtn.addEventListener('click', () => els.fileInputCamera.click());
@@ -997,8 +1062,8 @@ els.fileInputGallery.addEventListener('change', () => {
 });
 
 async function handleFile(file){
-  els.resultCard.hidden = true;
-  els.batchCard.hidden = true;
+  discardResult();
+  discardBatch();
   els.previewWrap.hidden = false;
   els.previewImg.src = URL.createObjectURL(file);
   setStatus('');
@@ -1022,18 +1087,24 @@ function openLightbox(src){
   els.lightboxImg.src = src;
   els.lightboxImg.classList.remove('zoomed-in');
   els.lightbox.hidden = false;
+  layerOpened('lightbox');
+}
+function closeLightbox(fromBack){
+  els.lightbox.hidden = true;
+  if (!fromBack) layerClosedViaUI('lightbox');
 }
 els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src));
 els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
-els.lightboxClose.addEventListener('click', () => { els.lightbox.hidden = true; });
+els.lightboxClose.addEventListener('click', () => closeLightbox());
 
 // ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
 let batchState = [];
 
 async function handleBatch(files){
-  els.resultCard.hidden = true;
+  discardResult();
   els.previewWrap.hidden = true;
   els.batchCard.hidden = false;
+  layerOpened('batch');
   batchState = files.map(file => ({ file, phone: '', status: 'pending', thumb: URL.createObjectURL(file) }));
   els.batchCount.textContent = batchState.length;
   renderBatch();
@@ -1103,13 +1174,16 @@ els.batchSaveBtn.addEventListener('click', async () => {
   await saveLog();
   els.batchCard.hidden = true;
   batchState = [];
+  layerClosedViaUI('batch');
   showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات`);
 });
 
-els.batchDiscardBtn.addEventListener('click', () => {
+function discardBatch(fromBack){
   els.batchCard.hidden = true;
   batchState = [];
-});
+  if (!fromBack) layerClosedViaUI('batch');
+}
+els.batchDiscardBtn.addEventListener('click', () => discardBatch());
 
 els.batchExportBtn.addEventListener('click', () => {
   const valid = batchState.filter(b => b.phone);
@@ -1149,16 +1223,19 @@ els.saveBtn.addEventListener('click', async () => {
   await saveLog();
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
+  layerClosedViaUI('result');
   showToast('اتحفظ ✅');
   switchView('orders');
 });
 
-els.discardBtn.addEventListener('click', () => {
+function discardResult(fromBack){
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
-});
+  if (!fromBack) layerClosedViaUI('result');
+}
+els.discardBtn.addEventListener('click', () => discardResult());
 
 els.copyAllBtn.addEventListener('click', async () => {
   const text = log.map(e => e.phone).join('\n');
