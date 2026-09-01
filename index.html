@@ -45,7 +45,7 @@
   }
 
   *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html,body{ margin:0; padding:0; overflow-x:hidden; max-width:100vw; }
+  html,body{ margin:0; padding:0; overflow-x:hidden; max-width:100vw; overscroll-behavior-y: contain; }
   body{
     background: var(--bg);
     color: var(--text);
@@ -243,6 +243,7 @@
   }
   .order-row:first-child{ border-top:none; }
   .order-row:active{ background: var(--bg); }
+  .orders-load-more{ display:block; width:100%; text-align:center; margin-top:10px; }
   .order-row-main{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
   .order-row-phone{
     font-family:'JetBrains Mono', monospace; direction:ltr; unicode-bidi: isolate;
@@ -411,6 +412,36 @@
     border-radius:10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13px; padding:11px; cursor:pointer;
     min-height:44px;
   }
+
+  /* ---------- custom dialog (replaces confirm()/prompt()) ---------- */
+  .dialog{ position: fixed; inset:0; z-index: 950; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .dialog[hidden]{ display:none; }
+  .dialog-backdrop{ position:absolute; inset:0; background: rgba(10,12,15,.55); }
+  .dialog-panel{
+    position: relative; width:100%; max-width:360px;
+    background: var(--surface); color: var(--text);
+    border-radius: 16px; padding: 22px 20px; border: 1px solid var(--border);
+    box-shadow: 0 12px 30px rgba(0,0,0,.25);
+  }
+  .dialog-title{ margin:0 0 8px; font-weight:800; font-size:16.5px; color: var(--text); }
+  .dialog-message{ margin:0 0 16px; font-size:14px; line-height:1.6; color: var(--text-secondary); }
+  .dialog-input{
+    width:100%; box-sizing:border-box; margin-bottom:16px;
+    border:1.5px solid var(--border); background: var(--bg); color: var(--text);
+    border-radius:10px; padding:12px 14px; font-family:'Cairo',sans-serif; font-size:15px;
+    outline:none; min-height:44px;
+  }
+  .dialog-input:focus{ border-color: var(--primary); }
+  .dialog-actions{ display:flex; gap:10px; }
+  .dialog-actions button{
+    flex:1; min-height:44px; border-radius:10px; font-family:'Cairo',sans-serif; font-weight:700; font-size:14.5px; cursor:pointer;
+  }
+  .dialog-actions .btn-ghost{ background:transparent; border:1.5px solid var(--border); color: var(--text-secondary); }
+  .dialog-actions .btn-primary{ background: var(--primary); color: var(--primary-text-on); border:none; }
+  .dialog-panel.danger .dialog-title{ color: var(--error-text); }
+  .dialog-panel.danger .dialog-actions .btn-primary{
+    background: var(--error-text); color:#fff;
+  }
 </style>
 
 </head>
@@ -494,6 +525,7 @@
       </div>
       <p class="orders-count">إجمالي الأوردرات: <span id="ordersCount">0</span></p>
       <ul class="order-list" id="ordersList"></ul>
+      <button class="btn-small orders-load-more" id="ordersLoadMoreBtn" hidden>عرض المزيد (+10)</button>
       <p class="empty-state" id="ordersEmptyState">لسه مفيش أوردرات محفوظة — روح شاشة المسح وابدأ</p>
     </section>
 
@@ -562,6 +594,19 @@
   </div>
 </div>
 
+<div class="dialog" id="appDialog" hidden>
+  <div class="dialog-backdrop" id="dialogBackdrop"></div>
+  <div class="dialog-panel" id="dialogPanel">
+    <p class="dialog-title" id="dialogTitle"></p>
+    <p class="dialog-message" id="dialogMessage"></p>
+    <input type="text" class="dialog-input" id="dialogInput" hidden>
+    <div class="dialog-actions">
+      <button class="btn-ghost" id="dialogCancelBtn">إلغاء</button>
+      <button class="btn-primary" id="dialogConfirmBtn">تأكيد</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const STORAGE_KEY = 'phone-log';
 const RESTAURANTS_KEY = 'restaurant-list';
@@ -584,6 +629,14 @@ const els = {
   lightbox: document.getElementById('lightbox'),
   lightboxImg: document.getElementById('lightboxImg'),
   lightboxClose: document.getElementById('lightboxClose'),
+  appDialog: document.getElementById('appDialog'),
+  dialogBackdrop: document.getElementById('dialogBackdrop'),
+  dialogPanel: document.getElementById('dialogPanel'),
+  dialogTitle: document.getElementById('dialogTitle'),
+  dialogMessage: document.getElementById('dialogMessage'),
+  dialogInput: document.getElementById('dialogInput'),
+  dialogCancelBtn: document.getElementById('dialogCancelBtn'),
+  dialogConfirmBtn: document.getElementById('dialogConfirmBtn'),
   resultCard: document.getElementById('resultCard'),
   phoneInput: document.getElementById('phoneInput'),
   resultHint: document.getElementById('resultHint'),
@@ -607,6 +660,7 @@ const els = {
   orderSearch: document.getElementById('orderSearch'),
   ordersCount: document.getElementById('ordersCount'),
   ordersList: document.getElementById('ordersList'),
+  ordersLoadMoreBtn: document.getElementById('ordersLoadMoreBtn'),
   ordersEmptyState: document.getElementById('ordersEmptyState'),
   copyAllBtn: document.getElementById('copyAllBtn'),
   csvBtn: document.getElementById('csvBtn'),
@@ -626,6 +680,7 @@ let log = [];
 let restaurants = ['اما'];
 let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
 let sheetIndex = null; // which log entry the open bottom sheet is showing
+let ordersVisibleCount = 5; // progressive display: 5 initially, +10 per "load more" tap
 
 // ---------- Android Back navigation state ----------
 // Tracks which UI "layers" (sheet/lightbox/batch/result/non-scan view) are currently open,
@@ -636,13 +691,19 @@ let openLayers = [];
 let historyArmed = false;
 let suppressPopstate = false;
 let pendingHistorySettle = false;
+// Double-Back-to-Exit guard: only relevant when at Scan root with no layer open.
+let exitWindowOpen = false;
+let exitWindowTimer = null;
+const EXIT_WINDOW_MS = 2000;
 
 function scheduleHistorySettle(){
   if (pendingHistorySettle) return;
   pendingHistorySettle = true;
   Promise.resolve().then(() => {
     pendingHistorySettle = false;
-    const shouldBeArmed = openLayers.length > 0;
+    // stay armed if any layer is open, OR while idle at Scan root (root guard) unless we're
+    // inside the short post-first-Back exit window (letting a second Back actually exit).
+    const shouldBeArmed = openLayers.length > 0 || (currentView === 'scan' && !exitWindowOpen);
     if (shouldBeArmed && !historyArmed){
       history.pushState({ scanlyLayer: true }, '');
       historyArmed = true;
@@ -653,7 +714,7 @@ function scheduleHistorySettle(){
     }
   });
 }
-// call when a layer OPENS (sheet/lightbox/batch/result/non-scan view)
+// call when a layer OPENS (sheet/lightbox/batch/result/dialog/non-scan view)
 function layerOpened(name){
   openLayers.push(name);
   scheduleHistorySettle();
@@ -670,15 +731,40 @@ function closeLayerByName(name){
   else if (name === 'sheet') closeOrderSheet(true);
   else if (name === 'batch') discardBatch(true);
   else if (name === 'result') discardResult(true);
+  else if (name === 'dialog') hideDialog(null, true);
   else if (name === 'view') switchView('scan', true);
+}
+// Back pressed while at Scan root with nothing open — first press shows a toast and keeps the
+// user in place (re-arms the guard); a second press within EXIT_WINDOW_MS is allowed through.
+function handleRootBack(){
+  if (exitWindowOpen){
+    clearTimeout(exitWindowTimer);
+    exitWindowOpen = false;
+    return; // don't re-arm — this lets the in-flight Back navigation actually exit
+  }
+  showToast('اضغط رجوع مرة أخرى للخروج');
+  exitWindowOpen = true;
+  clearTimeout(exitWindowTimer);
+  exitWindowTimer = setTimeout(() => {
+    exitWindowOpen = false;
+    scheduleHistorySettle(); // re-arm the guard so the next Back starts a fresh cycle
+  }, EXIT_WINDOW_MS);
 }
 window.addEventListener('popstate', () => {
   if (suppressPopstate){ suppressPopstate = false; historyArmed = false; return; }
   historyArmed = false;
   const top = openLayers.pop();
   if (top) closeLayerByName(top);
+  else handleRootBack();
   scheduleHistorySettle();
 });
+// Arm the root guard only after the user's first real interaction with the page — pushing
+// history state before any interaction risks Chrome's History Manipulation Intervention
+// silently skipping it (entries added without a user gesture can be skipped on Back).
+document.addEventListener('pointerdown', function armRootGuardOnce(){
+  document.removeEventListener('pointerdown', armRootGuardOnce);
+  scheduleHistorySettle();
+}, { once: true });
 
 // escapes any text before it's injected via innerHTML — applies to anything
 // that came from Gemini's read of a photo, or from a user-typed field
@@ -742,11 +828,16 @@ function switchView(name, fromBack){
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === name);
   });
-  if (name === 'orders') renderOrdersList();
+  if (name === 'orders'){ ordersVisibleCount = 5; renderOrdersList(); }
   if (name === 'more') renderRestaurantChips();
   window.scrollTo(0, 0);
   currentView = name;
 
+  if (prevView === 'scan' && name !== 'scan'){
+    // leaving Scan root cancels any pending "press back again to exit" window
+    clearTimeout(exitWindowTimer);
+    exitWindowOpen = false;
+  }
   if (!fromBack){
     if (prevView === 'scan' && name !== 'scan') layerOpened('view');
     else if (prevView !== 'scan' && name === 'scan') layerClosedViaUI('view');
@@ -757,6 +848,44 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
 
+// ---------- custom dialog (replaces confirm()/prompt() with a Mission-Control-styled dialog) ----------
+let dialogResolve = null;
+
+function hideDialog(result, fromBack){
+  els.appDialog.hidden = true;
+  if (!fromBack) layerClosedViaUI('dialog');
+  const resolve = dialogResolve;
+  dialogResolve = null;
+  if (resolve) resolve(result);
+}
+
+// mode 'confirm' resolves true/null; mode 'prompt' resolves the typed string/null. Cancel/backdrop/Back all resolve null.
+function showDialog({ title, message = '', mode = 'confirm', danger = false, confirmLabel = 'تأكيد', cancelLabel = 'إلغاء', defaultValue = '' }){
+  return new Promise((resolve) => {
+    dialogResolve = resolve;
+    els.dialogTitle.textContent = title;
+    els.dialogMessage.textContent = message;
+    els.dialogMessage.hidden = !message;
+    els.dialogPanel.classList.toggle('danger', !!danger);
+    els.dialogConfirmBtn.textContent = confirmLabel;
+    els.dialogCancelBtn.textContent = cancelLabel;
+    els.dialogInput.hidden = mode !== 'prompt';
+    els.dialogInput.value = mode === 'prompt' ? defaultValue : '';
+    els.appDialog.hidden = false;
+    layerOpened('dialog');
+    if (mode === 'prompt') requestAnimationFrame(() => els.dialogInput.focus());
+  });
+}
+
+els.dialogBackdrop.addEventListener('click', () => hideDialog(null));
+els.dialogCancelBtn.addEventListener('click', () => hideDialog(null));
+els.dialogConfirmBtn.addEventListener('click', () => {
+  hideDialog(els.dialogInput.hidden ? true : els.dialogInput.value);
+});
+els.dialogInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') els.dialogConfirmBtn.click();
+});
+
 // ---------- restaurant dropdown (Scan form) ----------
 function renderRestaurantOptions(selected){
   const options = restaurants.map(r =>
@@ -764,9 +893,9 @@ function renderRestaurantOptions(selected){
   ).join('');
   els.restaurantSelect.innerHTML = options + `<option value="__new__">+ مطعم جديد</option>`;
 }
-els.restaurantSelect.addEventListener('change', () => {
+els.restaurantSelect.addEventListener('change', async () => {
   if (els.restaurantSelect.value === '__new__'){
-    const name = prompt('اسم المطعم الجديد؟');
+    const name = await showDialog({ title: 'اسم المطعم الجديد؟', mode: 'prompt', confirmLabel: 'إضافة' });
     if (name && name.trim()){
       restaurants.push(name.trim());
       saveRestaurants();
@@ -812,7 +941,11 @@ function renderOrdersList(){
       })
     : indexed;
 
-  els.ordersList.innerHTML = filtered.map(({entry, i}) => {
+  // Progressive display only applies with no active search — while searching, show every
+  // match immediately so a result doesn't hide behind "load more".
+  const displayList = query ? filtered : filtered.slice(0, ordersVisibleCount);
+
+  els.ordersList.innerHTML = displayList.map(({entry, i}) => {
     const safePhone = escapeHTML(entry.phone);
     const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
     const metaParts = [entry.restaurant, entry.area, address ? `🏠 ${address}` : '', entry.payment].filter(Boolean);
@@ -828,7 +961,15 @@ function renderOrdersList(){
         ${metaLine}
       </li>`;
   }).join('');
+
+  const remaining = query ? 0 : filtered.length - displayList.length;
+  els.ordersLoadMoreBtn.hidden = remaining <= 0;
 }
+
+els.ordersLoadMoreBtn.addEventListener('click', () => {
+  ordersVisibleCount += 10;
+  renderOrdersList();
+});
 
 els.orderSearch.addEventListener('input', renderOrdersList);
 
@@ -884,7 +1025,13 @@ els.sheetEditBtn.addEventListener('click', () => {
 
 els.sheetDeleteBtn.addEventListener('click', async () => {
   if (sheetIndex === null) return;
-  if (!confirm('تمسح الأوردر ده؟')) return;
+  const ok = await showDialog({
+    title: 'تمسح الأوردر ده؟',
+    message: 'الخطوة دي مش هترجع.',
+    danger: true,
+    confirmLabel: 'مسح',
+  });
+  if (!ok) return;
   log.splice(sheetIndex, 1);
   await saveLog();
   closeOrderSheet();
@@ -1255,7 +1402,13 @@ els.csvBtn.addEventListener('click', () => {
 });
 
 els.clearBtn.addEventListener('click', async () => {
-  if (!confirm('تمسح كل الأرقام المحفوظة؟ الخطوة دي مش هترجع')) return;
+  const ok = await showDialog({
+    title: `تمسح كل السجل؟`,
+    message: `هيتمسح ${log.length} أوردر نهائيًا من الجهاز، ومفيش أي طريقة للاسترجاع بعد كده.`,
+    danger: true,
+    confirmLabel: 'مسح نهائيًا',
+  });
+  if (!ok) return;
   log = [];
   await saveLog();
   renderOrdersList();
