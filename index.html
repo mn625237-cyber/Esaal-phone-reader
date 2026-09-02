@@ -130,6 +130,8 @@
     display:flex; align-items:center; justify-content:center; gap:8px;
   }
   .status.error{ color: var(--error-text); }
+  .retry-btn{ display:block; width:100%; margin-top:10px; }
+  .btn-primary:disabled, .btn-small:disabled{ opacity:.5; cursor:not-allowed; }
   .spinner{
     display:inline-block; width:15px; height:15px;
     border: 2px solid var(--border);
@@ -469,7 +471,8 @@
           <img id="previewImg" alt="صورة الريسيت">
           <p class="zoom-hint">دوس على الصورة للتكبير ومطابقة الرقم</p>
         </div>
-        <div class="status" id="statusText" hidden></div>
+        <div class="status" id="statusText" hidden aria-live="polite"></div>
+        <button class="btn-small retry-btn" id="retryScanBtn" hidden>🔄 حاول تاني</button>
       </section>
 
       <section class="receipt batch-card" id="batchCard" hidden>
@@ -484,7 +487,7 @@
 
       <section class="receipt result-card" id="resultCard" hidden>
         <p class="result-label">الرقم اللي اتقرا من الريسيت:</p>
-        <input type="tel" id="phoneInput" class="phone-input" inputmode="numeric" maxlength="14" placeholder="01xxxxxxxxx">
+        <input type="tel" id="phoneInput" class="phone-input" inputmode="numeric" maxlength="14" placeholder="01xxxxxxxxx" autocomplete="off">
         <p class="hint" id="resultHint">لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ</p>
         <div class="alt-wrap" id="altWrap" hidden>
           <span class="alt-label">أرقام تانية اتلاقت في نفس الصورة:</span>
@@ -572,7 +575,7 @@
 
 <div class="sheet" id="orderSheet" hidden>
   <div class="sheet-backdrop" id="sheetBackdrop"></div>
-  <div class="sheet-panel">
+  <div class="sheet-panel" id="sheetPanel" tabindex="-1">
     <div class="sheet-handle"></div>
     <div class="sheet-order-preview" id="sheetPreview"></div>
     <div class="sheet-primary-actions">
@@ -620,6 +623,7 @@ const els = {
   previewWrap: document.getElementById('previewWrap'),
   previewImg: document.getElementById('previewImg'),
   statusText: document.getElementById('statusText'),
+  retryScanBtn: document.getElementById('retryScanBtn'),
   batchCard: document.getElementById('batchCard'),
   batchCount: document.getElementById('batchCount'),
   batchList: document.getElementById('batchList'),
@@ -668,6 +672,7 @@ const els = {
   restaurantChips: document.getElementById('restaurantChips'),
   orderSheet: document.getElementById('orderSheet'),
   sheetBackdrop: document.getElementById('sheetBackdrop'),
+  sheetPanel: document.getElementById('sheetPanel'),
   sheetPreview: document.getElementById('sheetPreview'),
   sheetWaBtn: document.getElementById('sheetWaBtn'),
   sheetCallBtn: document.getElementById('sheetCallBtn'),
@@ -681,6 +686,9 @@ let restaurants = ['اما'];
 let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
 let sheetIndex = null; // which log entry the open bottom sheet is showing
 let ordersVisibleCount = 5; // progressive display: 5 initially, +10 per "load more" tap
+let isScanning = false; // guards against duplicate/concurrent scan requests
+let lastScanFile = null; // the most recently captured/picked file, kept for one-tap Retry
+let lightboxReturnFocusEl = null; // element to restore focus to when the lightbox closes
 
 // ---------- Android Back navigation state ----------
 // Tracks which UI "layers" (sheet/lightbox/batch/result/non-scan view) are currently open,
@@ -820,6 +828,16 @@ function showToast(msg){
   toastTimer = setTimeout(()=> els.toast.classList.remove('show'), 1800);
 }
 
+// ---------- clipboard (never fails silently — always confirms success or failure) ----------
+async function copyToClipboard(text, successMsg){
+  try{
+    await navigator.clipboard.writeText(text);
+    showToast(successMsg);
+  }catch(err){
+    showToast('تعذّر النسخ — جرّب تاني');
+  }
+}
+
 // ---------- bottom navigation / view switching ----------
 const VIEWS = { scan: els.viewScan, orders: els.viewOrders, more: els.viewMore };
 function switchView(name, fromBack){
@@ -874,6 +892,7 @@ function showDialog({ title, message = '', mode = 'confirm', danger = false, con
     els.appDialog.hidden = false;
     layerOpened('dialog');
     if (mode === 'prompt') requestAnimationFrame(() => els.dialogInput.focus());
+    else requestAnimationFrame(() => els.dialogCancelBtn.focus());
   });
 }
 
@@ -999,6 +1018,7 @@ function openOrderSheet(i){
   }
 
   els.orderSheet.hidden = false;
+  requestAnimationFrame(() => els.sheetPanel.focus());
   layerOpened('sheet');
 }
 function closeOrderSheet(fromBack){
@@ -1011,8 +1031,7 @@ els.sheetBackdrop.addEventListener('click', () => closeOrderSheet());
 els.sheetCopyBtn.addEventListener('click', async () => {
   if (sheetIndex === null) return;
   const entry = log[sheetIndex];
-  await navigator.clipboard.writeText(orderLinesFromEntry(entry).join('\n'));
-  showToast('اتنسخ الأوردر ✅');
+  await copyToClipboard(orderLinesFromEntry(entry).join('\n'), 'اتنسخ الأوردر ✅');
 });
 
 els.sheetEditBtn.addEventListener('click', () => {
@@ -1066,14 +1085,29 @@ function resizeImageToBase64(file, maxDim = 1100, quality = 0.75){
 
 // ---------- OCR (Gemini Flash-Lite, called through our own /api route so the key stays hidden) ----------
 async function extractPhone(base64Image){
-  const response = await fetch('/api/extract-phone', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: base64Image })
-  });
-  if (!response.ok) throw new Error('api-failed');
+  let response;
+  try{
+    response = await fetch('/api/extract-phone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image })
+    });
+  }catch(err){
+    throw new Error('network-error'); // fetch itself failed — no connectivity/DNS/etc.
+  }
+  if (!response.ok) throw new Error('server-error');
   const data = await response.json();
   return { phone: data.phone || null, alternates: [] };
+}
+
+// maps an OCR-pipeline error to a clear, specific Arabic message — never the same generic text
+// for network vs server vs unreadable-image failures.
+function scanErrorMessage(err){
+  const msg = err && err.message;
+  if (msg === 'network-error') return 'مفيش اتصال بالإنترنت — اتأكد من الشبكة وجرّب تاني';
+  if (msg === 'server-error') return 'السيرفر مش متجاوب دلوقتي — جرّب تاني بعد شوية';
+  if (msg === 'read failed' || msg === 'image load failed') return 'الصورة دي فيها مشكلة — جرّب صورة تانية أو صوّر تاني';
+  return 'حصلت مشكلة غير متوقعة — جرّب تاني';
 }
 
 function setStatus(msg, isError=false){
@@ -1128,8 +1162,7 @@ function updateOrderPreview(){
 els.copyOrderBtn.addEventListener('click', async () => {
   const lines = buildOrderLines();
   if (!lines.some(l => l !== '')){ showToast('مفيش بيانات تتنسخ'); return; }
-  await navigator.clipboard.writeText(lines.join('\n'));
-  showToast('اتنسخ الأوردر ✅');
+  await copyToClipboard(lines.join('\n'), 'اتنسخ الأوردر ✅');
 });
 
 function openResult(phone, alternates = []){
@@ -1209,38 +1242,82 @@ els.fileInputGallery.addEventListener('change', () => {
 });
 
 async function handleFile(file){
+  if (isScanning) return; // ignore a new capture while one is already in flight
   discardResult();
   discardBatch();
+  lastScanFile = file;
   els.previewWrap.hidden = false;
+  // release the previous preview's memory before creating a new one — only revoke blob: URLs,
+  // never touch a plain string/empty src
+  if (els.previewImg.src && els.previewImg.src.startsWith('blob:')){
+    URL.revokeObjectURL(els.previewImg.src);
+  }
   els.previewImg.src = URL.createObjectURL(file);
+  els.retryScanBtn.hidden = true;
   setStatus('');
+  await runScan(file, true);
+}
 
+// runs the actual OCR pipeline on a given file. Used both for a fresh capture and for a one-tap
+// Retry on the same image (Retry never asks the user to re-pick a file).
+async function runScan(file, isFirstAttempt){
+  if (isScanning) return;
+  isScanning = true;
+  els.cameraBtn.disabled = true;
+  els.galleryBtn.disabled = true;
+  els.retryScanBtn.disabled = true;
+  els.retryScanBtn.hidden = true;
   try{
     setStatus('بيقرا الريسيت...');
     els.statusText.insertAdjacentHTML('beforeend', '<span class="spinner"></span>');
     const base64 = await resizeImageToBase64(file);
     const { phone, alternates } = await extractPhone(base64);
     setStatus('');
-    openResult(phone, alternates);
+    if (isFirstAttempt){
+      openResult(phone, alternates); // full setup — this is a brand-new scan
+    }else{
+      // retry: only refresh the phone/alternates — never wipe address/restaurant/area/payment
+      // the driver may have already started typing while the first attempt was failing
+      els.phoneInput.value = phone || '';
+      els.resultHint.textContent = phone
+        ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
+        : 'مالقتش رقم في الصورة — اكتبه يدويًا';
+      renderAlternates(alternates);
+      updateOrderPreview();
+    }
   }catch(err){
-    setStatus('حصلت مشكلة في القراءة — جرّب تاني، أو اكتب الرقم يدويًا', true);
-    openResult('', []);
+    setStatus(scanErrorMessage(err), true);
+    els.retryScanBtn.hidden = false;
+    if (isFirstAttempt) openResult('', []); // first failure: reveal the manual-entry form
+    // a retry failure leaves the already-open form exactly as the driver left it
+  } finally {
+    isScanning = false;
+    els.cameraBtn.disabled = false;
+    els.galleryBtn.disabled = false;
+    els.retryScanBtn.disabled = false;
   }
 }
 
+els.retryScanBtn.addEventListener('click', () => {
+  if (lastScanFile) runScan(lastScanFile, false);
+});
+
 // ---------- lightbox (tap any receipt image to zoom in and compare) ----------
-function openLightbox(src){
+function openLightbox(src, triggerEl){
   if (!src) return;
   els.lightboxImg.src = src;
   els.lightboxImg.classList.remove('zoomed-in');
   els.lightbox.hidden = false;
+  lightboxReturnFocusEl = triggerEl || null;
+  requestAnimationFrame(() => els.lightboxClose.focus());
   layerOpened('lightbox');
 }
 function closeLightbox(fromBack){
   els.lightbox.hidden = true;
   if (!fromBack) layerClosedViaUI('lightbox');
+  if (lightboxReturnFocusEl){ lightboxReturnFocusEl.focus(); lightboxReturnFocusEl = null; }
 }
-els.previewImg.addEventListener('click', () => openLightbox(els.previewImg.src));
+els.previewImg.addEventListener('click', (e) => openLightbox(els.previewImg.src, e.currentTarget));
 els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
 els.lightboxClose.addEventListener('click', () => closeLightbox());
 
@@ -1248,11 +1325,16 @@ els.lightboxClose.addEventListener('click', () => closeLightbox());
 let batchState = [];
 
 async function handleBatch(files){
+  if (isScanning) return; // ignore a new batch while a scan/batch is already in flight
+  isScanning = true;
+  els.cameraBtn.disabled = true;
+  els.galleryBtn.disabled = true;
   discardResult();
+  revokeBatchThumbs(); // release any previous, never-saved batch's thumbnails before replacing them
   els.previewWrap.hidden = true;
   els.batchCard.hidden = false;
   layerOpened('batch');
-  batchState = files.map(file => ({ file, phone: '', status: 'pending', thumb: URL.createObjectURL(file) }));
+  batchState = files.map(file => ({ file, phone: '', status: 'pending', errorMsg: '', thumb: URL.createObjectURL(file) }));
   els.batchCount.textContent = batchState.length;
   renderBatch();
 
@@ -1266,20 +1348,24 @@ async function handleBatch(files){
       batchState[i].status = phone ? 'done' : 'empty';
     }catch(err){
       batchState[i].status = 'error';
+      batchState[i].errorMsg = scanErrorMessage(err);
     }
     updateBatchRow(i);
   }
+  isScanning = false;
+  els.cameraBtn.disabled = false;
+  els.galleryBtn.disabled = false;
 }
 
 function batchRowHTML(item, i){
-  const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: 'حصلت مشكلة في القراءة' };
+  const labels = { pending: 'في الانتظار...', loading: 'بيقرا...', done: '', empty: 'مالقتش رقم — اكتبه يدويًا', error: item.errorMsg || 'حصلت مشكلة في القراءة' };
   return `
     <li class="batch-item" data-row="${i}">
       <img class="batch-thumb" src="${item.thumb}" data-idx="${i}">
       <div class="batch-item-body">
         <input type="tel" class="batch-phone-input" inputmode="numeric" maxlength="14"
-               data-idx="${i}" value="${escapeHTML(item.phone)}" placeholder="01xxxxxxxxx">
-        <span class="batch-status ${item.status === 'error' ? 'error' : ''}">${labels[item.status] || ''}</span>
+               data-idx="${i}" value="${escapeHTML(item.phone)}" placeholder="01xxxxxxxxx" autocomplete="off">
+        <span class="batch-status ${item.status === 'error' ? 'error' : ''}">${escapeHTML(labels[item.status] || '')}</span>
       </div>
     </li>`;
 }
@@ -1300,7 +1386,7 @@ function updateBatchRow(i){
 
 els.batchList.addEventListener('click', (e) => {
   const thumb = e.target.closest('.batch-thumb');
-  if (thumb) openLightbox(thumb.src);
+  if (thumb) openLightbox(thumb.src, thumb);
 });
 
 els.batchList.addEventListener('input', (e) => {
@@ -1320,13 +1406,21 @@ els.batchSaveBtn.addEventListener('click', async () => {
   }));
   await saveLog();
   els.batchCard.hidden = true;
+  revokeBatchThumbs();
   batchState = [];
   layerClosedViaUI('batch');
   showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات`);
 });
 
+// releases every batch thumbnail's memory — called right before batchState is cleared,
+// whether the batch was saved or discarded (never leaves stale blob: URLs behind)
+function revokeBatchThumbs(){
+  batchState.forEach(item => { if (item.thumb) URL.revokeObjectURL(item.thumb); });
+}
+
 function discardBatch(fromBack){
   els.batchCard.hidden = true;
+  revokeBatchThumbs();
   batchState = [];
   if (!fromBack) layerClosedViaUI('batch');
 }
@@ -1338,9 +1432,11 @@ els.batchExportBtn.addEventListener('click', () => {
   const rows = ['الرقم', ...valid.map(b => b.phone)];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.download = `batch-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 els.saveBtn.addEventListener('click', async () => {
@@ -1378,6 +1474,12 @@ els.saveBtn.addEventListener('click', async () => {
 function discardResult(fromBack){
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
+  if (els.previewImg.src && els.previewImg.src.startsWith('blob:')){
+    URL.revokeObjectURL(els.previewImg.src);
+    els.previewImg.removeAttribute('src');
+  }
+  els.retryScanBtn.hidden = true;
+  setStatus('');
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
   if (!fromBack) layerClosedViaUI('result');
@@ -1386,8 +1488,7 @@ els.discardBtn.addEventListener('click', () => discardResult());
 
 els.copyAllBtn.addEventListener('click', async () => {
   const text = log.map(e => e.phone).join('\n');
-  await navigator.clipboard.writeText(text);
-  showToast('اتنسخت كل الأرقام ✅');
+  await copyToClipboard(text, 'اتنسخت كل الأرقام ✅');
 });
 
 els.csvBtn.addEventListener('click', () => {
@@ -1396,9 +1497,11 @@ els.csvBtn.addEventListener('click', () => {
   )];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.download = `phone-log-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 els.clearBtn.addEventListener('click', async () => {
