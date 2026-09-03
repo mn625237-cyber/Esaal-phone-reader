@@ -301,6 +301,7 @@
     background: var(--surface); border-top: 1px solid var(--border);
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     max-width: 480px; margin: 0 auto;
+    touch-action: none;
   }
   .nav-btn{
     flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
@@ -373,6 +374,7 @@
     transition: width .25s ease;
   }
   @media (prefers-reduced-motion: reduce){ .lightbox-scroll img{ transition:none; } }
+  .lightbox-scroll img.pinching{ transition:none; }
   .lightbox-scroll img.zoomed-in{ width:280%; max-width:none; cursor: zoom-out; }
   .lightbox-close{
     position: fixed; top:16px; left:16px; z-index:1000;
@@ -1312,6 +1314,8 @@ function openLightbox(src, triggerEl){
   if (!src) return;
   els.lightboxImg.src = src;
   els.lightboxImg.classList.remove('zoomed-in');
+  lightboxPct = 100;
+  els.lightboxImg.style.width = '';
   els.lightbox.hidden = false;
   lightboxReturnFocusEl = triggerEl || null;
   requestAnimationFrame(() => els.lightboxClose.focus());
@@ -1323,7 +1327,44 @@ function closeLightbox(fromBack){
   if (lightboxReturnFocusEl){ lightboxReturnFocusEl.focus(); lightboxReturnFocusEl = null; }
 }
 els.previewImg.addEventListener('click', (e) => openLightbox(els.previewImg.src, e.currentTarget));
-els.lightboxImg.addEventListener('click', () => els.lightboxImg.classList.toggle('zoomed-in'));
+// ---------- pinch-to-zoom (two-finger) for the lightbox — reuses the SAME width-driven zoom
+// mechanism as before (so the existing native-scroll panning keeps working unchanged), just
+// making it continuous instead of a fixed 100%/280% jump. Tap-to-toggle still works too.
+let pinchStartDist = 0;
+let pinchStartPct = 100;
+let lightboxPct = 100;
+const LIGHTBOX_MIN_PCT = 100;
+const LIGHTBOX_MAX_PCT = 400;
+
+function setLightboxZoom(pct){
+  lightboxPct = Math.min(LIGHTBOX_MAX_PCT, Math.max(LIGHTBOX_MIN_PCT, pct));
+  els.lightboxImg.style.width = lightboxPct + '%';
+  els.lightboxImg.classList.toggle('zoomed-in', lightboxPct > 100);
+}
+function touchDistance(t0, t1){
+  return Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+}
+els.lightboxImg.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2){
+    pinchStartDist = touchDistance(e.touches[0], e.touches[1]);
+    pinchStartPct = lightboxPct;
+    els.lightboxImg.classList.add('pinching');
+  }
+}, { passive: true });
+els.lightboxImg.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2 && pinchStartDist > 0){
+    e.preventDefault(); // this is a pinch, not a page/container gesture
+    const ratio = touchDistance(e.touches[0], e.touches[1]) / pinchStartDist;
+    setLightboxZoom(pinchStartPct * ratio);
+  }
+}, { passive: false });
+els.lightboxImg.addEventListener('touchend', (e) => {
+  if (e.touches.length < 2){
+    pinchStartDist = 0;
+    els.lightboxImg.classList.remove('pinching');
+  }
+});
+els.lightboxImg.addEventListener('click', () => setLightboxZoom(lightboxPct > 100 ? 100 : 280));
 els.lightboxClose.addEventListener('click', () => closeLightbox());
 
 // ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
