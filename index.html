@@ -1333,6 +1333,7 @@ els.previewImg.addEventListener('click', (e) => openLightbox(els.previewImg.src,
 let pinchStartDist = 0;
 let pinchStartPct = 100;
 let lightboxPct = 100;
+let justPinched = false; // true right after a 2-finger gesture ends — swallows the synthetic click some browsers fire
 const LIGHTBOX_MIN_PCT = 100;
 const LIGHTBOX_MAX_PCT = 400;
 
@@ -1360,11 +1361,18 @@ els.lightboxImg.addEventListener('touchmove', (e) => {
 }, { passive: false });
 els.lightboxImg.addEventListener('touchend', (e) => {
   if (e.touches.length < 2){
+    if (pinchStartDist > 0){
+      justPinched = true;
+      setTimeout(() => { justPinched = false; }, 350); // safety net if no synthetic click follows
+    }
     pinchStartDist = 0;
     els.lightboxImg.classList.remove('pinching');
   }
 });
-els.lightboxImg.addEventListener('click', () => setLightboxZoom(lightboxPct > 100 ? 100 : 280));
+els.lightboxImg.addEventListener('click', () => {
+  if (justPinched){ justPinched = false; return; } // this click was synthesized by ending the pinch, not a real tap
+  setLightboxZoom(lightboxPct > 100 ? 100 : 280);
+});
 els.lightboxClose.addEventListener('click', () => closeLightbox());
 
 // ---------- batch mode (multiple gallery photos at once — phone only; add address/restaurant/area/payment per order afterwards if needed) ----------
