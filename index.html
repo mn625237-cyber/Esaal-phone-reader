@@ -366,16 +366,12 @@
   }
   .lightbox[hidden]{ display:none; }
   .lightbox-scroll{
-    width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling: touch;
+    width:100%; height:100%; overflow:hidden; touch-action:none;
     display:flex; align-items:flex-start; justify-content:center; padding: 40px 0;
   }
   .lightbox-scroll img{
     width:100%; max-width:600px; height:auto; cursor: zoom-in;
-    transition: width .25s ease;
   }
-  @media (prefers-reduced-motion: reduce){ .lightbox-scroll img{ transition:none; } }
-  .lightbox-scroll img.pinching{ transition:none; }
-  .lightbox-scroll img.zoomed-in{ width:280%; max-width:none; cursor: zoom-out; }
   .lightbox-close{
     position: fixed; top:16px; left:16px; z-index:1000;
     width:44px; height:44px; border-radius:50%;
@@ -617,6 +613,7 @@
   </div>
 </div>
 
+<script src="/vendor/panzoom.min.js"></script>
 <script>
 const STORAGE_KEY = 'phone-log';
 const RESTAURANTS_KEY = 'restaurant-list';
@@ -638,6 +635,7 @@ const els = {
   batchDiscardBtn: document.getElementById('batchDiscardBtn'),
   batchExportBtn: document.getElementById('batchExportBtn'),
   lightbox: document.getElementById('lightbox'),
+  lightboxScroll: document.getElementById('lightboxScroll'),
   lightboxImg: document.getElementById('lightboxImg'),
   lightboxClose: document.getElementById('lightboxClose'),
   appDialog: document.getElementById('appDialog'),
@@ -773,13 +771,13 @@ window.addEventListener('popstate', () => {
   else handleRootBack();
   scheduleHistorySettle();
 });
-// Arm the root guard only after the user's first real interaction with the page — pushing
-// history state before any interaction risks Chrome's History Manipulation Intervention
-// silently skipping it (entries added without a user gesture can be skipped on Back).
-document.addEventListener('pointerdown', function armRootGuardOnce(){
-  document.removeEventListener('pointerdown', armRootGuardOnce);
-  scheduleHistorySettle();
-}, { once: true });
+// Arm the root guard immediately on script load (not gated behind a user gesture).
+// Chromium's History Manipulation Intervention only skips gesture-less entries for the
+// browser's own back/forward BUTTON UI, never for the History API itself — and since Scanly
+// is a single-URL SPA that only ever maintains ONE extra pushed entry at a time (never a
+// chain), even a worst-case skip still lands back on this same document and still fires
+// popstate, so our handler still gets a chance to run. See Phase 2.2 report for the research.
+scheduleHistorySettle();
 
 // escapes any text before it's injected via innerHTML — applies to anything
 // that came from Gemini's read of a photo, or from a user-typed field
@@ -1310,12 +1308,15 @@ els.retryScanBtn.addEventListener('click', () => {
 });
 
 // ---------- lightbox (tap any receipt image to zoom in and compare) ----------
+let lightboxPanzoom = null; // single persistent instance, reset (not disposed/recreated) on each open
+
 function openLightbox(src, triggerEl){
   if (!src) return;
   els.lightboxImg.src = src;
-  els.lightboxImg.classList.remove('zoomed-in');
-  lightboxPct = 100;
-  els.lightboxImg.style.width = '';
+  if (lightboxPanzoom){
+    lightboxPanzoom.moveTo(0, 0);
+    lightboxPanzoom.zoomAbs(0, 0, 1);
+  }
   els.lightbox.hidden = false;
   lightboxReturnFocusEl = triggerEl || null;
   requestAnimationFrame(() => els.lightboxClose.focus());
@@ -1327,51 +1328,40 @@ function closeLightbox(fromBack){
   if (lightboxReturnFocusEl){ lightboxReturnFocusEl.focus(); lightboxReturnFocusEl = null; }
 }
 els.previewImg.addEventListener('click', (e) => openLightbox(els.previewImg.src, e.currentTarget));
-// ---------- pinch-to-zoom (two-finger) for the lightbox — reuses the SAME width-driven zoom
-// mechanism as before (so the existing native-scroll panning keeps working unchanged), just
-// making it continuous instead of a fixed 100%/280% jump. Tap-to-toggle still works too.
-let pinchStartDist = 0;
-let pinchStartPct = 100;
-let lightboxPct = 100;
-let justPinched = false; // true right after a 2-finger gesture ends — swallows the synthetic click some browsers fire
-const LIGHTBOX_MIN_PCT = 100;
-const LIGHTBOX_MAX_PCT = 400;
 
-function setLightboxZoom(pct){
-  lightboxPct = Math.min(LIGHTBOX_MAX_PCT, Math.max(LIGHTBOX_MIN_PCT, pct));
-  els.lightboxImg.style.width = lightboxPct + '%';
-  els.lightboxImg.classList.toggle('zoomed-in', lightboxPct > 100);
+// ---------- pinch-to-zoom + pan for the lightbox, via the vendored Panzoom library ----------
+// Panzoom rebases its pinch reference distance on every touchmove frame (verified directly in
+// its source), so clamping at the 100%/400% boundary never leaves "stored" excess distance —
+// reversing direction starts shrinking/growing immediately, with no dead zone.
+let justPinched = false; // true right after a 2-finger gesture ends — swallows the synthetic click some browsers fire
+let pinchFingersActive = false; // lightweight parallel observer, does not call preventDefault itself
+
+if (window.panzoom){
+  lightboxPanzoom = window.panzoom(els.lightboxImg, {
+    maxZoom: 4,
+    minZoom: 1,
+    zoomDoubleClickSpeed: 1, // disable Panzoom's own double-tap zoom — we keep only our single-tap shortcut
+    disableKeyboardInteraction: true,
+  });
 }
-function touchDistance(t0, t1){
-  return Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-}
+
 els.lightboxImg.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 2){
-    pinchStartDist = touchDistance(e.touches[0], e.touches[1]);
-    pinchStartPct = lightboxPct;
-    els.lightboxImg.classList.add('pinching');
+  if (e.touches.length >= 2) pinchFingersActive = true;
+}, { passive: true });
+els.lightboxImg.addEventListener('touchend', (e) => {
+  if (pinchFingersActive && e.touches.length < 2){
+    pinchFingersActive = false;
+    justPinched = true;
+    setTimeout(() => { justPinched = false; }, 350); // safety net if no synthetic click follows
   }
 }, { passive: true });
-els.lightboxImg.addEventListener('touchmove', (e) => {
-  if (e.touches.length === 2 && pinchStartDist > 0){
-    e.preventDefault(); // this is a pinch, not a page/container gesture
-    const ratio = touchDistance(e.touches[0], e.touches[1]) / pinchStartDist;
-    setLightboxZoom(pinchStartPct * ratio);
-  }
-}, { passive: false });
-els.lightboxImg.addEventListener('touchend', (e) => {
-  if (e.touches.length < 2){
-    if (pinchStartDist > 0){
-      justPinched = true;
-      setTimeout(() => { justPinched = false; }, 350); // safety net if no synthetic click follows
-    }
-    pinchStartDist = 0;
-    els.lightboxImg.classList.remove('pinching');
-  }
-});
 els.lightboxImg.addEventListener('click', () => {
   if (justPinched){ justPinched = false; return; } // this click was synthesized by ending the pinch, not a real tap
-  setLightboxZoom(lightboxPct > 100 ? 100 : 280);
+  if (!lightboxPanzoom) return;
+  const current = lightboxPanzoom.getTransform().scale;
+  const target = current > 1 ? 1 : 2.8;
+  const rect = els.lightboxScroll.getBoundingClientRect();
+  lightboxPanzoom.smoothZoomAbs(rect.width / 2, rect.height / 2, target);
 });
 els.lightboxClose.addEventListener('click', () => closeLightbox());
 
