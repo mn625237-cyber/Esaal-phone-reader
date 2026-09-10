@@ -447,6 +447,58 @@
   .dialog-panel.danger .dialog-actions .btn-primary{
     background: var(--error-text); color:#fff;
   }
+
+  /* ---------- Phase 3: Shift Accounting ---------- */
+  .money{ font-family:'JetBrains Mono', monospace; direction:ltr; unicode-bidi:isolate; font-weight:700; }
+
+  /* Shift card (Scan/Home) */
+  .shift-status-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .shift-live-badge{ font-weight:800; font-size:13.5px; color: var(--success-text); }
+  .shift-start-time{ font-size:11.5px; color: var(--text-secondary); font-weight:600; }
+  .shift-mini-stats{ display:flex; gap:10px; margin-bottom:10px; }
+  .shift-mini-item{
+    flex:1; background: var(--bg); border:1px solid var(--border); border-radius:8px;
+    padding:8px 10px; text-align:center;
+  }
+  .shift-mini-item span{ display:block; font-size:10.5px; color: var(--text-secondary); font-weight:700; margin-bottom:2px; }
+  .shift-mini-item b{ font-size:14px; color: var(--text); }
+  .shift-incomplete-note{
+    font-size:12px; color: var(--error-text); background: var(--error-bg); border:1px solid var(--error-border);
+    border-radius:8px; padding:8px 10px; margin-bottom:10px; font-weight:600;
+  }
+  .shift-last-summary{ margin-top:2px; padding-top:12px; border-top:1px solid var(--border); }
+  .shift-last-label{ font-size:11.5px; color: var(--text-secondary); font-weight:700; margin:0 0 4px; }
+  .shift-net-line{ font-size:15px; font-weight:800; color: var(--text); margin:0 0 10px; }
+  .btn-danger{ color: var(--error-text) !important; border-color: var(--error-border) !important; background: var(--error-bg) !important; }
+
+  /* Live settlement card (Orders) */
+  .settlement-card{
+    background: var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:14px 16px; margin-bottom:14px;
+  }
+  .settlement-title{ margin:0 0 8px; font-size:12px; font-weight:800; color: var(--text-secondary); }
+  .settlement-row{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13.5px; font-weight:600; color: var(--text); padding:7px 0;
+    border-top:1px solid var(--border);
+  }
+  .settlement-row:first-of-type{ border-top:none; }
+  .settlement-net{ font-weight:800; margin-top:2px; padding-top:11px; border-top:1.5px solid var(--border); }
+  .settlement-incomplete-note{ font-size:11.5px; color: var(--error-text); margin:10px 0 0; font-weight:600; }
+
+  /* Accounting block inside the order form */
+  .accounting-block{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+  .payment-type-toggle{ display:flex; gap:8px; margin-bottom:10px; }
+  .pt-btn{
+    flex:1; min-height:44px; border-radius:8px; border:1.5px solid var(--border);
+    background: var(--bg); color: var(--text); font-family:'Cairo',sans-serif; font-weight:700; font-size:14px;
+    cursor:pointer;
+  }
+  .pt-btn.active{ background: var(--primary); border-color: var(--primary); color: var(--primary-text-on); }
+  .pt-btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .acc-field{ flex:1; }
+  .acc-field-label{ display:block; font-size:10.5px; color: var(--text-secondary); font-weight:700; margin-bottom:4px; }
+  .acc-locked-hint{ font-size:11.5px; color: var(--error-text); font-weight:700; margin:8px 0 0; }
 </style>
 
 </head>
@@ -477,6 +529,9 @@
         <div class="status" id="statusText" hidden aria-live="polite"></div>
         <button class="btn-small retry-btn" id="retryScanBtn" hidden>🔄 حاول تاني</button>
       </section>
+
+      <!-- Phase 3: Shift Accounting — always visible on Scan/Home, rendered dynamically by renderShiftBlock() -->
+      <section class="receipt shift-card" id="shiftCard"></section>
 
       <section class="receipt batch-card" id="batchCard" hidden>
         <p class="result-label">راجع كل رقم قبل الحفظ (<span id="batchCount">0</span> صورة):</p>
@@ -511,6 +566,26 @@
           <input type="text" id="paymentTextInput" class="field-input" placeholder="فيزا أو 247ج">
         </div>
 
+        <!-- Phase 3: Shift Accounting — hidden unless this order belongs to (or can belong to) an open/closed shift -->
+        <div class="accounting-block" id="accountingBlock" hidden>
+          <label class="result-label field-title">بيانات المحاسبة</label>
+          <div class="payment-type-toggle">
+            <button type="button" class="pt-btn" id="ptCashBtn" data-pt="cash">💵 كاش</button>
+            <button type="button" class="pt-btn" id="ptVisaBtn" data-pt="visa">💳 فيزا</button>
+          </div>
+          <div class="addr-row">
+            <div class="acc-field">
+              <label class="acc-field-label">قيمة الأوردر</label>
+              <input type="number" id="accPrice" class="field-input" inputmode="decimal" placeholder="0" min="0" step="0.01">
+            </div>
+            <div class="acc-field">
+              <label class="acc-field-label">رسوم التوصيل (ربحك)</label>
+              <input type="number" id="accFee" class="field-input" inputmode="decimal" placeholder="0" min="0" step="0.01">
+            </div>
+          </div>
+          <p class="acc-locked-hint" id="accLockedHint" hidden>🔒 الشفت مقفول — المحاسبة مقفولة</p>
+        </div>
+
         <div class="order-preview" id="orderPreview"></div>
 
         <div class="result-actions">
@@ -529,6 +604,8 @@
       <div class="orders-toolbar">
         <input type="search" id="orderSearch" class="order-search" placeholder="🔍 دور برقم أو منطقة أو مطعم">
       </div>
+      <!-- Phase 3: live shift settlement — rendered by renderSettlementCard(), only shown while a shift is open -->
+      <div class="settlement-card" id="settlementCard" hidden></div>
       <p class="orders-count">إجمالي الأوردرات: <span id="ordersCount">0</span></p>
       <ul class="order-list" id="ordersList"></ul>
       <button class="btn-small orders-load-more" id="ordersLoadMoreBtn" hidden>عرض المزيد (+10)</button>
@@ -617,6 +694,7 @@
 <script>
 const STORAGE_KEY = 'phone-log';
 const RESTAURANTS_KEY = 'restaurant-list';
+const SHIFTS_KEY = 'scanly-shifts'; // Phase 3 — additive, independent of phone-log / restaurant-list
 
 const els = {
   headerStatus: document.getElementById('headerStatus'),
@@ -684,10 +762,21 @@ const els = {
   sheetEditBtn: document.getElementById('sheetEditBtn'),
   sheetCopyBtn: document.getElementById('sheetCopyBtn'),
   sheetDeleteBtn: document.getElementById('sheetDeleteBtn'),
+  // ---- Phase 3: Shift Accounting ----
+  shiftCard: document.getElementById('shiftCard'),
+  settlementCard: document.getElementById('settlementCard'),
+  accountingBlock: document.getElementById('accountingBlock'),
+  ptCashBtn: document.getElementById('ptCashBtn'),
+  ptVisaBtn: document.getElementById('ptVisaBtn'),
+  accPrice: document.getElementById('accPrice'),
+  accFee: document.getElementById('accFee'),
+  accLockedHint: document.getElementById('accLockedHint'),
 };
 
 let log = [];
 let restaurants = ['اما'];
+let shifts = []; // Phase 3 — array of shift objects, persisted under SHIFTS_KEY
+let selectedPaymentType = null; // Phase 3 — 'cash' | 'visa' | null, tracks the accounting-block toggle for the currently-open order form
 let editingIndex = null; // null = adding new entry; number = editing log[editingIndex]
 let sheetIndex = null; // which log entry the open bottom sheet is showing
 let ordersVisibleCount = 5; // progressive display: 5 initially, +10 per "load more" tap
@@ -812,6 +901,33 @@ function updateHeaderStatus(){
     : 'جاهز — صوّر أول ريسيت';
 }
 
+// ---------- Phase 3: shift storage (same plain localStorage pattern as phone-log) ----------
+function loadShifts(){
+  try{
+    const raw = localStorage.getItem(SHIFTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){
+    return [];
+  }
+}
+function saveShifts(){
+  try{
+    localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts));
+  }catch(e){
+    showToast('تعذّر حفظ بيانات الشفت');
+  }
+}
+function getActiveShift(){
+  return shifts.find(s => s.status === 'open') || null;
+}
+function getLastClosedShift(){
+  const closed = shifts.filter(s => s.status === 'closed' && s.endedAt);
+  if (!closed.length) return null;
+  return closed.reduce((latest, s) => (new Date(s.endedAt) > new Date(latest.endedAt) ? s : latest));
+}
+
 function loadRestaurants(){
   try{
     const raw = localStorage.getItem(RESTAURANTS_KEY);
@@ -822,6 +938,134 @@ function loadRestaurants(){
 }
 function saveRestaurants(){
   try{ localStorage.setItem(RESTAURANTS_KEY, JSON.stringify(restaurants)); }catch(e){}
+}
+
+// ---------- Phase 3: shift lifecycle ----------
+
+// Called after anything that could change what the shift card / live settlement
+// should show: saving/editing/deleting an order, starting/ending a shift.
+function refreshShiftUI(){
+  renderShiftBlock();
+  if (currentView === 'orders') renderSettlementCard();
+}
+
+async function startShift(){
+  if (getActiveShift()){
+    showToast('فيه شفت شغال بالفعل');
+    return;
+  }
+  shifts.push({
+    id: 'shift_' + Date.now(),
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    status: 'open',
+    finalSettlement: null,
+  });
+  saveShifts();
+  refreshShiftUI();
+  showToast('اتبدأ الشفت 🟢');
+}
+
+async function endShift(){
+  const active = getActiveShift();
+  if (!active) return;
+
+  const shiftOrders = log.filter(o => o.shiftId === active.id);
+  const incomplete = shiftOrders.filter(o => !isAccountingComplete(o));
+
+  if (incomplete.length){
+    const goToOrders = await showDialog({
+      title: 'في طلبات لسه ناقصة',
+      message: `فيه ${incomplete.length} طلب محتاج يستكمل بيانات المحاسبة (نوع الدفع / القيمة / الرسوم) قبل ما تقدر تقفل الشفت.`,
+      confirmLabel: 'روح للطلبات',
+      cancelLabel: 'تمام',
+    });
+    if (goToOrders) switchView('orders');
+    return;
+  }
+
+  const ok = await showDialog({
+    title: 'تقفل الشفت؟',
+    message: `هيتقفل حساب الشفت نهائيًا (${shiftOrders.length} أوردر) ومش هينفع تتعدل بياناته المحاسبية بعد كده.`,
+    danger: true,
+    confirmLabel: 'قفل الشفت',
+  });
+  if (!ok) return;
+
+  active.finalSettlement = computeSettlement(shiftOrders);
+  active.endedAt = new Date().toISOString();
+  active.status = 'closed';
+  saveShifts();
+  refreshShiftUI();
+  showToast('اتقفل الشفت ✅');
+}
+
+// Renders the Scan/Home shift card: Start button, live open-shift status, or the
+// last closed shift's final (locked) settlement. Rebinds its own buttons each time
+// since innerHTML is fully replaced.
+function renderShiftBlock(){
+  const active = getActiveShift();
+
+  if (active){
+    const shiftOrders = log.filter(o => o.shiftId === active.id);
+    const settlement = computeSettlement(shiftOrders);
+    const incompleteCount = shiftOrders.filter(o => !isAccountingComplete(o)).length;
+    els.shiftCard.innerHTML = `
+      <div class="shift-status-row">
+        <span class="shift-live-badge">🟢 شفت شغال</span>
+        <span class="shift-start-time">من ${formatTime(active.startedAt)}</span>
+      </div>
+      <div class="shift-mini-stats">
+        <div class="shift-mini-item"><span>طلبات محسوبة</span><b class="money">${settlement.totalOrders}</b></div>
+        <div class="shift-mini-item"><span>ربحك الحالي</span><b class="money">${formatMoney(settlement.totalProfit)} ج</b></div>
+      </div>
+      ${incompleteCount > 0 ? `<p class="shift-incomplete-note">⚠️ في ${incompleteCount} طلب محتاج استكمال بيانات المحاسبة — مش داخل الحساب لحد ما يتكمّل</p>` : ''}
+      <button class="btn-small btn-danger" id="endShiftBtn">🔴 إنهاء الشفت</button>
+    `;
+    document.getElementById('endShiftBtn').addEventListener('click', endShift);
+  }else{
+    const last = getLastClosedShift();
+    els.shiftCard.innerHTML = `
+      <button class="btn-primary" id="startShiftBtn">🟢 ابدأ الشفت</button>
+      ${last ? `
+        <div class="shift-last-summary">
+          <p class="shift-last-label">آخر شفت اتقفل — ${formatTime(last.endedAt)}</p>
+          <p class="shift-net-line">${netSettlementText(last.finalSettlement.net)}</p>
+          <div class="shift-mini-stats">
+            <div class="shift-mini-item"><span>عدد الطلبات</span><b class="money">${last.finalSettlement.totalOrders}</b></div>
+            <div class="shift-mini-item"><span>إجمالي الربح</span><b class="money">${formatMoney(last.finalSettlement.totalProfit)} ج</b></div>
+            <div class="shift-mini-item"><span>الكاش معاك</span><b class="money">${formatMoney(last.finalSettlement.cashInHand)} ج</b></div>
+          </div>
+        </div>
+      ` : ''}
+    `;
+    document.getElementById('startShiftBtn').addEventListener('click', startShift);
+  }
+}
+
+// Renders the live settlement card inside Orders. Only visible while a shift is
+// open — a closed shift's number already lives on the Scan/Home card as a locked snapshot.
+function renderSettlementCard(){
+  const active = getActiveShift();
+  if (!active){
+    els.settlementCard.hidden = true;
+    els.settlementCard.innerHTML = '';
+    return;
+  }
+  const shiftOrders = log.filter(o => o.shiftId === active.id);
+  const settlement = computeSettlement(shiftOrders);
+  const incompleteCount = shiftOrders.filter(o => !isAccountingComplete(o)).length;
+
+  els.settlementCard.hidden = false;
+  els.settlementCard.innerHTML = `
+    <p class="settlement-title">حساب الشفت الحالي (لايف)</p>
+    <div class="settlement-row"><span>💵 الكاش معاك</span>${moneySpan(settlement.cashInHand)}</div>
+    <div class="settlement-row"><span>💰 صافي ربحك</span>${moneySpan(settlement.totalProfit)}</div>
+    <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(settlement.oweRestaurant)}</div>
+    <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(settlement.owedByRestaurant)}</div>
+    <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(settlement.net)}</b></div>
+    ${incompleteCount > 0 ? `<p class="settlement-incomplete-note">⚠️ في ${incompleteCount} طلب لسه محتاج استكمال بيانات المحاسبة — مش داخل في الحساب ده.</p>` : ''}
+  `;
 }
 
 // ---------- toast ----------
@@ -851,7 +1095,7 @@ function switchView(name, fromBack){
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === name);
   });
-  if (name === 'orders'){ ordersVisibleCount = 5; renderOrdersList(); }
+  if (name === 'orders'){ ordersVisibleCount = 5; renderOrdersList(); renderSettlementCard(); }
   if (name === 'more') renderRestaurantChips();
   window.scrollTo(0, 0);
   currentView = name;
@@ -948,6 +1192,85 @@ function orderLinesFromEntry(entry){
   return [entry.phone || '', address, line3]; // always exactly 3 lines, even if some are empty
 }
 
+// ============================================================
+// Phase 3 — Shift Accounting: pure calculation engine
+// No DOM access, no localStorage access, no side effects.
+// This is the SINGLE source of truth for all settlement math —
+// never duplicate these formulas in UI/render code.
+// ============================================================
+
+// An order counts toward any settlement ONLY if every accounting field is
+// present and within the approved business limits. Old/legacy orders (no
+// paymentType at all) and incomplete batch orders correctly return false
+// here and are silently excluded from every sum below.
+function isAccountingComplete(order){
+  if (!order || (order.paymentType !== 'cash' && order.paymentType !== 'visa')) return false;
+  if (!(Number.isFinite(order.fee) && order.fee > 0 && order.fee <= 5000)) return false;
+  if (order.paymentType === 'cash'){
+    return Number.isFinite(order.price) && order.price > 0 && order.price <= 50000;
+  }
+  return order.price === 0; // visa — price is always normalized to exactly 0
+}
+
+// orders: any array of order objects (already filtered to a single shift by the caller).
+// Returns the full settlement breakdown. Intentionally does NOT special-case fee > price —
+// that comparison is not part of the approved business model.
+function computeSettlement(orders){
+  const relevant = orders.filter(isAccountingComplete);
+  const cash = relevant.filter(o => o.paymentType === 'cash');
+  const visa = relevant.filter(o => o.paymentType === 'visa');
+  const totalOrders = relevant.length;
+  const cashInHand = cash.reduce((sum, o) => sum + o.price, 0);
+  const totalProfit = relevant.reduce((sum, o) => sum + o.fee, 0);
+  const oweRestaurant = cash.reduce((sum, o) => sum + (o.price - o.fee), 0);
+  const owedByRestaurant = visa.reduce((sum, o) => sum + o.fee, 0);
+  const averageProfit = totalOrders ? totalProfit / totalOrders : 0;
+  const net = oweRestaurant - owedByRestaurant;
+  return { totalOrders, cashInHand, totalProfit, averageProfit, oweRestaurant, owedByRestaurant, net };
+}
+
+// Rounds to 2 decimals and trims a trailing ".00" — plain Latin digits only
+// (never localized digits), consistent with the app's LTR-isolated number style.
+function formatMoney(n){
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  // toFixed(2) avoids float noise (e.g. 30.1 -> "30.099999..."), then trim a
+  // trailing ".00" or a single trailing zero so 275 stays "275" and 275.50 becomes "275.5".
+  return v.toFixed(2).replace(/\.?0+$/, '') || '0';
+}
+function moneySpan(n){
+  return `<span class="money">${formatMoney(n)} ج</span>`;
+}
+// Arabic phrasing for the final net settlement — matches the approved business
+// interpretation exactly: net>0 courier owes the restaurant, net<0 the restaurant
+// owes the courier, net===0 balanced.
+function netSettlementText(net){
+  if (net > 0) return `عليك للمطعم: ${moneySpan(net)}`;
+  if (net < 0) return `لك عند المطعم: ${moneySpan(Math.abs(net))}`;
+  return 'الحساب متوازن ⚖️';
+}
+// Arabic validation message for the accounting block — checked in the same order
+// as isAccountingComplete so the message always matches the actual failing rule.
+function accountingValidationMessage(candidate){
+  if (!candidate || (candidate.paymentType !== 'cash' && candidate.paymentType !== 'visa')){
+    return 'اختار نوع الدفع الأول (كاش/فيزا)';
+  }
+  if (!(Number.isFinite(candidate.fee) && candidate.fee > 0)){
+    return 'اكتب رسوم التوصيل (لازم تكون أكبر من صفر)';
+  }
+  if (candidate.fee > 5000){
+    return 'رسوم التوصيل أكبر من الحد المسموح (5000 ج)';
+  }
+  if (candidate.paymentType === 'cash'){
+    if (!(Number.isFinite(candidate.price) && candidate.price > 0)){
+      return 'اكتب قيمة الأوردر (لازم تكون أكبر من صفر)';
+    }
+    if (candidate.price > 50000){
+      return 'قيمة الأوردر أكبر من الحد المسموح (50000 ج)';
+    }
+  }
+  return 'بيانات المحاسبة ناقصة أو غلط';
+}
+
 // ---------- Orders view (compact list + search) ----------
 function renderOrdersList(){
   els.ordersCount.textContent = log.length;
@@ -969,10 +1292,14 @@ function renderOrdersList(){
   // match immediately so a result doesn't hide behind "load more".
   const displayList = query ? filtered : filtered.slice(0, ordersVisibleCount);
 
+  const activeShiftForList = getActiveShift(); // Phase 3 — flags orders still missing accounting data
   els.ordersList.innerHTML = displayList.map(({entry, i}) => {
     const safePhone = escapeHTML(entry.phone);
     const address = [entry.building, entry.floor, entry.apt].filter(Boolean).join(' ');
     const metaParts = [entry.restaurant, entry.area, address ? `🏠 ${address}` : '', entry.payment].filter(Boolean);
+    if (activeShiftForList && entry.shiftId === activeShiftForList.id && !isAccountingComplete(entry)){
+      metaParts.push('⚠️ محتاج بيانات محاسبة');
+    }
     const metaLine = metaParts.length
       ? `<div class="order-row-meta">${metaParts.map(escapeHTML).join(' • ')}</div>`
       : '';
@@ -1060,6 +1387,7 @@ els.sheetDeleteBtn.addEventListener('click', async () => {
   await saveLog();
   closeOrderSheet();
   renderOrdersList();
+  refreshShiftUI();
   showToast('اتمسح');
 });
 
@@ -1134,6 +1462,71 @@ function renderAlternates(list){
   });
 }
 
+// ---------- Phase 3: accounting block inside the order form ----------
+
+// A closed shift's accounting fields are hard-locked: never editable again,
+// regardless of what the UI is doing — this is checked again independently in
+// the save handler itself, not trusted to the UI alone.
+function isEntryAccountingLocked(entry){
+  if (!entry || !entry.shiftId) return false;
+  const s = shifts.find(sh => sh.id === entry.shiftId);
+  return !!s && s.status === 'closed';
+}
+
+function updatePaymentTypeButtons(){
+  els.ptCashBtn.classList.toggle('active', selectedPaymentType === 'cash');
+  els.ptVisaBtn.classList.toggle('active', selectedPaymentType === 'visa');
+}
+
+// entry === null  -> configuring the form for a brand-new order
+// entry === {...} -> configuring the form to edit an existing saved order
+function setupAccountingBlock(entry){
+  const show = entry ? !!entry.shiftId : !!getActiveShift();
+  els.accountingBlock.hidden = !show;
+  selectedPaymentType = null;
+  els.accPrice.value = '';
+  els.accFee.value = '';
+  els.accPrice.disabled = false;
+  els.accFee.disabled = false;
+  els.ptCashBtn.disabled = false;
+  els.ptVisaBtn.disabled = false;
+  els.accLockedHint.hidden = true;
+  if (!show) { updatePaymentTypeButtons(); return; }
+
+  if (entry){
+    selectedPaymentType = entry.paymentType || null;
+    els.accPrice.value = entry.price != null ? String(entry.price) : '';
+    els.accFee.value = entry.fee != null ? String(entry.fee) : '';
+  }
+  updatePaymentTypeButtons();
+  if (selectedPaymentType === 'visa') els.accPrice.value = '0';
+  els.accPrice.disabled = selectedPaymentType === 'visa';
+
+  const locked = entry ? isEntryAccountingLocked(entry) : false;
+  if (locked){
+    els.accPrice.disabled = true;
+    els.accFee.disabled = true;
+    els.ptCashBtn.disabled = true;
+    els.ptVisaBtn.disabled = true;
+    els.accLockedHint.hidden = false;
+  }
+}
+
+els.ptCashBtn.addEventListener('click', () => {
+  if (els.ptCashBtn.disabled) return;
+  selectedPaymentType = 'cash';
+  if (els.accPrice.value === '0') els.accPrice.value = '';
+  els.accPrice.disabled = false;
+  updatePaymentTypeButtons();
+});
+els.ptVisaBtn.addEventListener('click', () => {
+  if (els.ptVisaBtn.disabled) return;
+  selectedPaymentType = 'visa';
+  els.accPrice.value = '0';
+  els.accPrice.disabled = true;
+  updatePaymentTypeButtons();
+});
+
 function buildOrderLines(){
   const phone = els.phoneInput.value.trim();
   const building = els.addrBuilding.value.trim();
@@ -1192,6 +1585,7 @@ function openResult(phone, alternates = []){
   els.areaTextInput.value = '';
   els.paymentTextInput.value = '';
   updateOrderPreview();
+  setupAccountingBlock(null);
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   layerOpened('result');
@@ -1222,6 +1616,7 @@ function openEditEntry(i){
   els.areaTextInput.value = entry.area || '';
   els.paymentTextInput.value = entry.payment || '';
   updateOrderPreview();
+  setupAccountingBlock(entry);
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   layerOpened('result');
@@ -1442,18 +1837,23 @@ els.batchList.addEventListener('input', (e) => {
 els.batchSaveBtn.addEventListener('click', async () => {
   const valid = batchState.filter(b => b.phone);
   if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
+  const activeShift = getActiveShift(); // Phase 3 — batch orders get shiftId but stay accounting-incomplete
   valid.forEach(b => log.unshift({
     phone: b.phone,
     savedAt: new Date().toISOString(),
     building: null, floor: null, apt: null,
     restaurant: null, area: null, payment: null,
+    shiftId: activeShift ? activeShift.id : null,
+    paymentType: null, price: null, fee: null,
   }));
   await saveLog();
   els.batchCard.hidden = true;
   revokeBatchThumbs();
   batchState = [];
   layerClosedViaUI('batch');
-  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات`);
+  refreshShiftUI();
+  const shiftNote = activeShift ? ' — استكمل بيانات المحاسبة من شاشة الأوردرات' : '';
+  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات${shiftNote}`);
 });
 
 // releases every batch thumbnail's memory — called right before batchState is cleared,
@@ -1490,15 +1890,66 @@ els.saveBtn.addEventListener('click', async () => {
     return;
   }
   const restaurant = els.restaurantSelect.value === '__new__' ? '' : els.restaurantSelect.value;
+
+  // ---- Phase 3: accounting fields ----
+  const isNewOrder = editingIndex === null;
+  const existingEntry = isNewOrder ? null : log[editingIndex];
+  const activeShift = getActiveShift();
+
+  // shiftId is assigned ONCE, at order creation, and is never reassigned by a later edit —
+  // even if a different shift is open when that edit happens.
+  const orderShiftId = isNewOrder
+    ? (activeShift ? activeShift.id : null)
+    : (existingEntry ? (existingEntry.shiftId ?? null) : null);
+
+  const orderShift = orderShiftId ? shifts.find(s => s.id === orderShiftId) : null;
+  const locked = !!(orderShift && orderShift.status === 'closed');
+
+  let paymentType, price, fee;
+
+  if (locked){
+    // Hard Lock — the save logic itself ignores whatever the form contains for these
+    // three fields and keeps the existing values, regardless of UI disabled state.
+    paymentType = existingEntry.paymentType ?? null;
+    price = existingEntry.price ?? null;
+    fee = existingEntry.fee ?? null;
+  }else if (!els.accountingBlock.hidden){
+    paymentType = selectedPaymentType;
+    const priceRaw = els.accPrice.value.trim();
+    const feeRaw = els.accFee.value.trim();
+    price = paymentType === 'visa' ? 0 : (priceRaw === '' ? null : Number(priceRaw));
+    fee = feeRaw === '' ? null : Number(feeRaw);
+
+    const candidate = { paymentType, price, fee };
+    // A brand-new order created while a shift is open MUST be accounting-complete
+    // before it can be saved at all. An edit is only validated if the driver actually
+    // touched an accounting field — otherwise it's left fully empty (still "incomplete",
+    // which is fine for a batch order being completed later).
+    const attemptedInput = !!paymentType || priceRaw !== '' || feeRaw !== '';
+    const mustBeComplete = (isNewOrder && !!activeShift) || attemptedInput;
+    if (mustBeComplete && !isAccountingComplete(candidate)){
+      showToast(accountingValidationMessage(candidate));
+      return;
+    }
+    if (!mustBeComplete){ paymentType = null; price = null; fee = null; }
+  }else{
+    // Accounting block never shown for this order (old order, no shift involved) — preserve as-is.
+    paymentType = existingEntry ? (existingEntry.paymentType ?? null) : null;
+    price = existingEntry ? (existingEntry.price ?? null) : null;
+    fee = existingEntry ? (existingEntry.fee ?? null) : null;
+  }
+
   const entryData = {
     phone,
-    savedAt: (editingIndex !== null && log[editingIndex]) ? log[editingIndex].savedAt : new Date().toISOString(),
+    savedAt: existingEntry ? existingEntry.savedAt : new Date().toISOString(),
     building: els.addrBuilding.value.trim() || null,
     floor: els.addrFloor.value.trim() || null,
     apt: els.addrApt.value.trim() || null,
     restaurant: restaurant || null,
     area: els.areaTextInput.value.trim() || null,
     payment: els.paymentTextInput.value.trim() || null,
+    shiftId: orderShiftId,
+    paymentType, price, fee,
   };
   if (editingIndex !== null && log[editingIndex]){
     log[editingIndex] = entryData;
@@ -1507,10 +1958,12 @@ els.saveBtn.addEventListener('click', async () => {
   }
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
+  selectedPaymentType = null;
   await saveLog();
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
   layerClosedViaUI('result');
+  refreshShiftUI();
   showToast('اتحفظ ✅');
   switchView('orders');
 });
@@ -1526,6 +1979,7 @@ function discardResult(fromBack){
   setStatus('');
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
+  selectedPaymentType = null;
   if (!fromBack) layerClosedViaUI('result');
 }
 els.discardBtn.addEventListener('click', () => discardResult());
@@ -1559,6 +2013,7 @@ els.clearBtn.addEventListener('click', async () => {
   log = [];
   await saveLog();
   renderOrdersList();
+  refreshShiftUI();
   showToast('اتمسح الكل');
 });
 
@@ -1566,8 +2021,10 @@ els.clearBtn.addEventListener('click', async () => {
 (async () => {
   log = await loadLog();
   restaurants = loadRestaurants();
+  shifts = loadShifts();
   updateHeaderStatus();
   switchView('scan');
+  renderShiftBlock();
 })();
 </script>
 </body>
