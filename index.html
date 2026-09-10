@@ -485,6 +485,7 @@
   .settlement-row:first-of-type{ border-top:none; }
   .settlement-net{ font-weight:800; margin-top:2px; padding-top:11px; border-top:1.5px solid var(--border); }
   .settlement-incomplete-note{ font-size:11.5px; color: var(--error-text); margin:10px 0 0; font-weight:600; }
+  .settlement-locked-note{ font-size:11.5px; color: var(--text-secondary); margin:10px 0 0; font-weight:600; }
 
   /* Accounting block inside the order form */
   .accounting-block{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
@@ -963,6 +964,13 @@ async function startShift(){
   });
   saveShifts();
   refreshShiftUI();
+  // Phase 3 fix — if a brand-new order form (not an edit of an already-saved order)
+  // is already open when the shift starts, make its accounting block react immediately
+  // instead of requiring the driver to close and reopen the form. Edits are untouched:
+  // an existing order's shiftId is never reassigned, so this only applies to new orders.
+  if (!els.resultCard.hidden && editingIndex === null){
+    setupAccountingBlock(null);
+  }
   showToast('اتبدأ الشفت 🟢');
 }
 
@@ -1043,28 +1051,49 @@ function renderShiftBlock(){
   }
 }
 
-// Renders the live settlement card inside Orders. Only visible while a shift is
-// open — a closed shift's number already lives on the Scan/Home card as a locked snapshot.
+// Renders the settlement card inside Orders — three states:
+// 1) an open shift  -> Live settlement, recomputed on every render from current orders.
+// 2) no open shift but a last CLOSED shift exists -> that shift's frozen finalSettlement
+//    snapshot, clearly marked Final/Locked (never recomputed from live orders).
+// 3) no shift at all yet -> card stays hidden.
 function renderSettlementCard(){
   const active = getActiveShift();
-  if (!active){
+
+  if (active){
+    const shiftOrders = log.filter(o => o.shiftId === active.id);
+    const settlement = computeSettlement(shiftOrders);
+    const incompleteCount = shiftOrders.filter(o => !isAccountingComplete(o)).length;
+    els.settlementCard.hidden = false;
+    els.settlementCard.innerHTML = `
+      <p class="settlement-title">⚡ حساب الشفت الحالي (لايف)</p>
+      <div class="settlement-row"><span>💵 الكاش معاك</span>${moneySpan(settlement.cashInHand)}</div>
+      <div class="settlement-row"><span>💰 صافي ربحك</span>${moneySpan(settlement.totalProfit)}</div>
+      <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(settlement.oweRestaurant)}</div>
+      <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(settlement.owedByRestaurant)}</div>
+      <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(settlement.net)}</b></div>
+      ${incompleteCount > 0 ? `<p class="settlement-incomplete-note">⚠️ في ${incompleteCount} طلب لسه محتاج استكمال بيانات المحاسبة — مش داخل في الحساب ده.</p>` : ''}
+    `;
+    return;
+  }
+
+  const last = getLastClosedShift();
+  if (!last){
     els.settlementCard.hidden = true;
     els.settlementCard.innerHTML = '';
     return;
   }
-  const shiftOrders = log.filter(o => o.shiftId === active.id);
-  const settlement = computeSettlement(shiftOrders);
-  const incompleteCount = shiftOrders.filter(o => !isAccountingComplete(o)).length;
-
+  // Read the frozen snapshot directly — never recompute from live orders, so editing
+  // or deleting an order after close can never change the number shown here.
+  const s = last.finalSettlement;
   els.settlementCard.hidden = false;
   els.settlementCard.innerHTML = `
-    <p class="settlement-title">حساب الشفت الحالي (لايف)</p>
-    <div class="settlement-row"><span>💵 الكاش معاك</span>${moneySpan(settlement.cashInHand)}</div>
-    <div class="settlement-row"><span>💰 صافي ربحك</span>${moneySpan(settlement.totalProfit)}</div>
-    <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(settlement.oweRestaurant)}</div>
-    <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(settlement.owedByRestaurant)}</div>
-    <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(settlement.net)}</b></div>
-    ${incompleteCount > 0 ? `<p class="settlement-incomplete-note">⚠️ في ${incompleteCount} طلب لسه محتاج استكمال بيانات المحاسبة — مش داخل في الحساب ده.</p>` : ''}
+    <p class="settlement-title">🔒 آخر شفت اتقفل — ${formatTime(last.endedAt)}</p>
+    <div class="settlement-row"><span>💵 الكاش معاك</span>${moneySpan(s.cashInHand)}</div>
+    <div class="settlement-row"><span>💰 صافي ربحك</span>${moneySpan(s.totalProfit)}</div>
+    <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(s.oweRestaurant)}</div>
+    <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(s.owedByRestaurant)}</div>
+    <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(s.net)}</b></div>
+    <p class="settlement-locked-note">🔒 نهائي ومقفول — مش بيتغير حتى لو اتعدّلت بيانات تانية في أوردرات الشفت ده.</p>
   `;
 }
 
@@ -2003,6 +2032,12 @@ els.csvBtn.addEventListener('click', () => {
 });
 
 els.clearBtn.addEventListener('click', async () => {
+  // Phase 3 — a Shift depends on its own orders for Live Settlement; wiping phone-log
+  // out from under an open Shift would silently zero its numbers. Block entirely.
+  if (getActiveShift()){
+    showToast('مينفعش تمسح كل السجل والشفت شغال — أنهِ الشفت الأول');
+    return;
+  }
   const ok = await showDialog({
     title: `تمسح كل السجل؟`,
     message: `هيتمسح ${log.length} أوردر نهائيًا من الجهاز، ومفيش أي طريقة للاسترجاع بعد كده.`,
