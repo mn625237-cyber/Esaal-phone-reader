@@ -487,6 +487,16 @@
   .settlement-incomplete-note{ font-size:11.5px; color: var(--error-text); margin:10px 0 0; font-weight:600; }
   .settlement-locked-note{ font-size:11.5px; color: var(--text-secondary); margin:10px 0 0; font-weight:600; }
 
+  /* Phase 4 — restaurant settlement breakdown */
+  .settlement-breakdown{ margin-top:11px; padding-top:11px; border-top:1px solid var(--border); }
+  .settlement-breakdown-title{ margin:0 0 6px; font-size:11px; font-weight:800; color: var(--text-secondary); }
+  .settlement-restaurant-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:12.5px; font-weight:600; color: var(--text); padding:5px 0;
+  }
+  .settlement-restaurant-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .settlement-restaurant-net{ flex-shrink:0; font-weight:700; }
+
   /* Accounting block inside the order form */
   .accounting-block{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
   .payment-type-toggle{ display:flex; gap:8px; margin-bottom:10px; }
@@ -500,6 +510,39 @@
   .acc-field{ flex:1; }
   .acc-field-label{ display:block; font-size:10.5px; color: var(--text-secondary); font-weight:700; margin-bottom:4px; }
   .acc-locked-hint{ font-size:11.5px; color: var(--error-text); font-weight:700; margin:8px 0 0; }
+
+  /* ---------- Phase 4: Gemini full-receipt extraction — suggestion markers ---------- */
+  .ai-suggestion-note{
+    margin: 10px 2px 0; font-size: 11.5px; font-weight:700; color: var(--primary);
+    background: var(--bg); border:1px dashed var(--primary); border-radius:8px; padding:7px 10px;
+  }
+  .field-input.ai-suggested, .meta-select.ai-suggested{ border: 1.5px dashed var(--primary); }
+
+  /* ---------- Phase 4: Native/PWA feel — selective text-selection control ----------
+     Applied ONLY to static UI chrome (buttons, nav, section labels/headings, hint text)
+     — never to <body> as a whole. Every input/textarea/select, the order-preview /
+     sheet-order-preview blocks, alternate-number chips, and per-row order data
+     (phone/address/restaurant/area) are all explicitly left untouched and stay fully
+     selectable and copyable, exactly as before this change. Does not alter Panzoom's
+     touch handling, openLayers, or the Android Back root guard in any way. */
+  button, .nav-btn, label, h1, h2, h3,
+  .stamp-logo, .header-status, .tagline, .hint, .zoom-hint, .alt-label,
+  .acc-field-label, .acc-locked-hint, .more-footnote, .dialog-title, .dialog-message,
+  .settlement-title, .settlement-breakdown-title, .shift-live-badge, .shift-start-time,
+  .shift-mini-item span, .shift-last-label, .shift-incomplete-note,
+  .settlement-incomplete-note, .settlement-locked-note, .sheet-handle,
+  .batch-status, .empty-state, .orders-count, a.btn-wa, a.sheet-wa-btn, a.sheet-call-btn{
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* Explicit opt-out: .chip is a <button> (caught by the rule above) but its content
+     is a real alternate phone number read from the receipt — it must stay selectable. */
+  .chip{
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
+  }
 </style>
 
 </head>
@@ -553,6 +596,9 @@
           <div class="alt-chips" id="altChips"></div>
         </div>
 
+        <!-- Phase 4: Gemini full-receipt extraction — informational only, never auto-confirms anything -->
+        <p class="ai-suggestion-note" id="aiSuggestionNote" hidden>🤖 بعض البيانات تحت دي مقترحة من قراءة الصورة — راجعها وعدّلها لو محتاج قبل الحفظ</p>
+
         <label class="result-label field-title">العنوان (عمارة | دور | شقة)</label>
         <div class="addr-row">
           <input type="text" id="addrBuilding" class="field-input" inputmode="numeric" placeholder="عمارة">
@@ -565,6 +611,14 @@
           <select id="restaurantSelect" class="field-input meta-select"></select>
           <input type="text" id="areaTextInput" class="field-input" placeholder="المنطقة">
           <input type="text" id="paymentTextInput" class="field-input" placeholder="فيزا أو 247ج">
+        </div>
+        <div class="alt-wrap" id="restaurantSuggestWrap" hidden>
+          <span class="alt-label">🤖 اسم مطعم مقترح من الصورة (مش موجود في قائمتك):</span>
+          <div class="alt-chips"><button type="button" class="chip" id="restaurantSuggestChip"></button></div>
+        </div>
+        <div class="alt-wrap" id="paymentHintWrap" hidden>
+          <span class="alt-label">🤖 نوع دفع مقترح من الصورة — دوس تملّه في خانة الدفع:</span>
+          <div class="alt-chips"><button type="button" class="chip" id="paymentHintChip"></button></div>
         </div>
 
         <!-- Phase 3: Shift Accounting — hidden unless this order belongs to (or can belong to) an open/closed shift -->
@@ -772,6 +826,12 @@ const els = {
   accPrice: document.getElementById('accPrice'),
   accFee: document.getElementById('accFee'),
   accLockedHint: document.getElementById('accLockedHint'),
+  // ---- Phase 4: Gemini full-receipt extraction (suggestion UI) ----
+  aiSuggestionNote: document.getElementById('aiSuggestionNote'),
+  restaurantSuggestWrap: document.getElementById('restaurantSuggestWrap'),
+  restaurantSuggestChip: document.getElementById('restaurantSuggestChip'),
+  paymentHintWrap: document.getElementById('paymentHintWrap'),
+  paymentHintChip: document.getElementById('paymentHintChip'),
 };
 
 let log = [];
@@ -1001,6 +1061,9 @@ async function endShift(){
   if (!ok) return;
 
   active.finalSettlement = computeSettlement(shiftOrders);
+  // Phase 4 — additive field on the same snapshot object, computed once here and
+  // never recomputed afterward, same immutability guarantee as the rest of finalSettlement.
+  active.finalSettlement.byRestaurant = computeSettlementByRestaurant(shiftOrders);
   active.endedAt = new Date().toISOString();
   active.status = 'closed';
   saveShifts();
@@ -1062,6 +1125,7 @@ function renderSettlementCard(){
   if (active){
     const shiftOrders = log.filter(o => o.shiftId === active.id);
     const settlement = computeSettlement(shiftOrders);
+    const byRestaurant = computeSettlementByRestaurant(shiftOrders); // Phase 4 — recomputed live, same as the overall total
     const incompleteCount = shiftOrders.filter(o => !isAccountingComplete(o)).length;
     els.settlementCard.hidden = false;
     els.settlementCard.innerHTML = `
@@ -1071,6 +1135,7 @@ function renderSettlementCard(){
       <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(settlement.oweRestaurant)}</div>
       <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(settlement.owedByRestaurant)}</div>
       <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(settlement.net)}</b></div>
+      ${settlementBreakdownHTML(byRestaurant)}
       ${incompleteCount > 0 ? `<p class="settlement-incomplete-note">⚠️ في ${incompleteCount} طلب لسه محتاج استكمال بيانات المحاسبة — مش داخل في الحساب ده.</p>` : ''}
     `;
     return;
@@ -1085,6 +1150,10 @@ function renderSettlementCard(){
   // Read the frozen snapshot directly — never recompute from live orders, so editing
   // or deleting an order after close can never change the number shown here.
   const s = last.finalSettlement;
+  // Phase 4 — s.byRestaurant is read directly from the frozen snapshot, never
+  // recomputed from live orders. A shift closed before Phase 4 simply lacks this
+  // key (undefined) — settlementBreakdownHTML() returns '' for that, so old shifts
+  // correctly fall back to showing the overall total only, with no retroactive math.
   els.settlementCard.hidden = false;
   els.settlementCard.innerHTML = `
     <p class="settlement-title">🔒 آخر شفت اتقفل — ${formatTime(last.endedAt)}</p>
@@ -1093,6 +1162,7 @@ function renderSettlementCard(){
     <div class="settlement-row"><span>🏪 عليك للمطعم</span>${moneySpan(s.oweRestaurant)}</div>
     <div class="settlement-row"><span>🏪 ليك عند المطعم</span>${moneySpan(s.owedByRestaurant)}</div>
     <div class="settlement-row settlement-net"><span>⚖️ التسوية النهائية</span><b>${netSettlementText(s.net)}</b></div>
+    ${settlementBreakdownHTML(s.byRestaurant)}
     <p class="settlement-locked-note">🔒 نهائي ومقفول — مش بيتغير حتى لو اتعدّلت بيانات تانية في أوردرات الشفت ده.</p>
   `;
 }
@@ -1258,6 +1328,48 @@ function computeSettlement(orders){
   return { totalOrders, cashInHand, totalProfit, averageProfit, oweRestaurant, owedByRestaurant, net };
 }
 
+// ============================================================
+// Phase 4 — Restaurant Settlement Breakdown
+// Groups orders by their exact stored `restaurant` string (conservative/canonical:
+// no fuzzy/normalized matching — `restaurant` values already come from the fixed
+// restaurant-list <select>, so an exact match is the correct and safe comparison)
+// and reuses computeSettlement() — completely unchanged — for each group. Orders
+// with a missing/empty restaurant are grouped under one canonical label rather
+// than being dropped or scattered. Does not duplicate or reinterpret any formula.
+// ============================================================
+const NO_RESTAURANT_LABEL = 'بدون مطعم محدد';
+
+function computeSettlementByRestaurant(orders){
+  const groups = new Map(); // restaurant label -> orders[]
+  orders.forEach(o => {
+    const key = (o.restaurant && String(o.restaurant).trim()) || NO_RESTAURANT_LABEL;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(o);
+  });
+  return Array.from(groups.entries())
+    .map(([restaurant, groupOrders]) => ({ restaurant, settlement: computeSettlement(groupOrders) }))
+    .filter(g => g.settlement.totalOrders > 0) // a group with zero accounting-complete orders adds no information
+    .sort((a, b) => b.settlement.totalProfit - a.settlement.totalProfit);
+}
+
+// Renders the optional per-restaurant breakdown block shared by both the live and
+// locked-snapshot settlement card states. Returns '' (nothing rendered) when there's
+// nothing to add: no data, or only a single group (which would just repeat the
+// overall total already shown above it).
+function settlementBreakdownHTML(byRestaurant){
+  if (!byRestaurant || byRestaurant.length <= 1) return '';
+  return `
+    <div class="settlement-breakdown">
+      <p class="settlement-breakdown-title">📊 تفصيل حسب المطعم</p>
+      ${byRestaurant.map(r => `
+        <div class="settlement-restaurant-row">
+          <span class="settlement-restaurant-name">${escapeHTML(r.restaurant)}</span>
+          <span class="settlement-restaurant-net">${netSettlementText(r.settlement.net)}</span>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
 // Rounds to 2 decimals and trims a trailing ".00" — plain Latin digits only
 // (never localized digits), consistent with the app's LTR-isolated number style.
 function formatMoney(n){
@@ -1298,6 +1410,55 @@ function accountingValidationMessage(candidate){
     }
   }
   return 'بيانات المحاسبة ناقصة أو غلط';
+}
+
+// ============================================================
+// Phase 4 — Duplicate Order Detection (warning-only, NEVER blocking,
+// NEVER merges, NEVER deletes). Two independent, pure helper functions.
+// ============================================================
+
+// Mirrors the server-side normalizePhone() logic in api/extract-phone.js
+// (Arabic/Persian digit conversion, +20/0020 handling, strict
+// 01[0125]xxxxxxxx validation) for CLIENT-SIDE comparison only. This is a
+// separate, parallel implementation — it does not call, import, or modify
+// the server function, which remains the sole authority for OCR validation.
+// Returns the normalized 11-digit string, or null if the input isn't a
+// valid Egyptian mobile number. Invalid numbers returning null is what
+// keeps duplicate detection from ever producing a false-positive warning.
+function normalizePhoneForCompare(raw){
+  if (typeof raw !== 'string') return null;
+  const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+  const persianIndic = '۰۱۲۳۴۵۶۷۸۹';
+  let s = raw
+    .replace(/[٠-٩]/g, (d) => String(arabicIndic.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String(persianIndic.indexOf(d)));
+  const hadPlus = s.trim().startsWith('+');
+  s = s.replace(/[^\d]/g, '');
+  if (hadPlus && s.startsWith('20')) {
+    s = '0' + s.slice(2);
+  } else if (s.startsWith('0020')) {
+    s = '0' + s.slice(4);
+  } else if (s.startsWith('20') && s.length === 12) {
+    s = '0' + s.slice(2);
+  }
+  return /^01[0125]\d{8}$/.test(s) ? s : null;
+}
+
+// Returns true if `phone` (any raw format) already exists among log[]
+// entries sharing the EXACT same shiftId (strict equality — null shiftId
+// only ever matches other null-shiftId orders, and two different real
+// shifts never match each other, so orders in different shifts are never
+// flagged as duplicates). excludeIndex lets an edit skip comparing an
+// order against its own prior saved copy. An invalid/unnormalizable phone
+// always returns false.
+function hasDuplicatePhoneInShift(phone, shiftId, excludeIndex){
+  const normalized = normalizePhoneForCompare(phone);
+  if (!normalized) return false;
+  return log.some((entry, i) => {
+    if (i === excludeIndex) return false;
+    if (entry.shiftId !== shiftId) return false;
+    return normalizePhoneForCompare(entry.phone) === normalized;
+  });
 }
 
 // ---------- Orders view (compact list + search) ----------
@@ -1462,6 +1623,55 @@ async function extractPhone(base64Image){
   return { phone: data.phone || null, alternates: [] };
 }
 
+// ---------- Phase 4: full-receipt OCR (calls the NEW /api/extract-receipt endpoint —
+// completely separate from extractPhone()/api/extract-phone.js above, which is
+// untouched and still used nowhere near this function). Every field except `phone`
+// is a suggestion the UI must present as such, never as confirmed data. ----------
+async function extractReceipt(base64Image){
+  let response;
+  try{
+    response = await fetch('/api/extract-receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image })
+    });
+  }catch(err){
+    throw new Error('network-error');
+  }
+  if (!response.ok) throw new Error('server-error');
+  const data = await response.json();
+  return {
+    phone: data.phone || null,
+    building: data.building || null,
+    floor: data.floor || null,
+    apt: data.apt || null,
+    restaurant: data.restaurant || null,
+    area: data.area || null,
+    payment: data.payment || null,
+    paymentHint: data.paymentHint || { type: null, amountText: null },
+  };
+}
+
+// Conservative, exact (trim + case-insensitive) match only — never fuzzy — against
+// the driver's own saved restaurant-list. Used to decide whether a Gemini-suggested
+// restaurant name can be pre-selected in the existing dropdown, or must instead be
+// shown as a separate suggestion the driver has to explicitly tap to add (never
+// auto-added to restaurant-list either way).
+function findMatchingRestaurant(suggested){
+  if (!suggested) return null;
+  const norm = suggested.trim().toLowerCase();
+  return restaurants.find(r => r.trim().toLowerCase() === norm) || null;
+}
+
+// Marks a field as AI-suggested (dashed border + tracked for the banner) and clears
+// that marker the FIRST time the driver actually edits that specific field — after
+// that point it's the driver's own confirmed data, indistinguishable from manual entry.
+function markAISuggested(el){
+  el.classList.add('ai-suggested');
+  el.addEventListener('input', () => el.classList.remove('ai-suggested'), { once: true });
+  el.addEventListener('change', () => el.classList.remove('ai-suggested'), { once: true });
+}
+
 // maps an OCR-pipeline error to a clear, specific Arabic message — never the same generic text
 // for network vs server vs unreadable-image failures.
 function scanErrorMessage(err){
@@ -1592,7 +1802,7 @@ els.copyOrderBtn.addEventListener('click', async () => {
   await copyToClipboard(lines.join('\n'), 'اتنسخ الأوردر ✅');
 });
 
-function openResult(phone, alternates = []){
+function openResult(phone, alternates = [], suggestion = null){
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
   els.resultCard.hidden = false;
@@ -1613,12 +1823,88 @@ function openResult(phone, alternates = []){
   renderRestaurantOptions(restaurants[0]);
   els.areaTextInput.value = '';
   els.paymentTextInput.value = '';
+  [els.addrBuilding, els.addrFloor, els.addrApt, els.areaTextInput, els.paymentTextInput, els.restaurantSelect]
+    .forEach(el => el.classList.remove('ai-suggested'));
+  els.aiSuggestionNote.hidden = true;
+  els.restaurantSuggestWrap.hidden = true;
+  els.paymentHintWrap.hidden = true;
+
+  // Phase 4 — apply Gemini full-receipt suggestions, if any. Every field stays a
+  // plain, fully-editable value the driver can change or clear; nothing here is
+  // saved as-is unless the driver reaches the Save button themselves, and no new
+  // restaurant is ever added to restaurant-list without an explicit tap-to-add.
+  if (suggestion){
+    let anySuggested = false;
+    if (suggestion.building){ els.addrBuilding.value = suggestion.building; markAISuggested(els.addrBuilding); anySuggested = true; }
+    if (suggestion.floor){ els.addrFloor.value = suggestion.floor; markAISuggested(els.addrFloor); anySuggested = true; }
+    if (suggestion.apt){ els.addrApt.value = suggestion.apt; markAISuggested(els.addrApt); anySuggested = true; }
+    if (suggestion.area){ els.areaTextInput.value = suggestion.area; markAISuggested(els.areaTextInput); anySuggested = true; }
+    if (suggestion.payment){ els.paymentTextInput.value = suggestion.payment; markAISuggested(els.paymentTextInput); anySuggested = true; }
+
+    if (suggestion.restaurant){
+      const matched = findMatchingRestaurant(suggestion.restaurant);
+      if (matched){
+        renderRestaurantOptions(matched);
+        markAISuggested(els.restaurantSelect);
+      }else{
+        els.restaurantSuggestChip.textContent = suggestion.restaurant;
+        els.restaurantSuggestChip.dataset.name = suggestion.restaurant;
+        els.restaurantSuggestWrap.hidden = false;
+      }
+      anySuggested = true;
+    }
+
+    const hint = suggestion.paymentHint;
+    if (hint && (hint.type === 'cash' || hint.type === 'visa' || hint.amountText)){
+      const typeLabel = hint.type === 'cash' ? 'كاش' : hint.type === 'visa' ? 'فيزا' : '';
+      const chipLabel = [typeLabel, hint.amountText].filter(Boolean).join(' ');
+      if (chipLabel){
+        els.paymentHintChip.textContent = chipLabel;
+        els.paymentHintChip.dataset.fill = chipLabel;
+        els.paymentHintWrap.hidden = false;
+        anySuggested = true;
+      }
+    }
+
+    els.aiSuggestionNote.hidden = !anySuggested;
+  }
+
   updateOrderPreview();
   setupAccountingBlock(null);
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   layerOpened('result');
 }
+
+// Phase 4 — tap-to-add a Gemini-suggested restaurant name (never automatic).
+// Reuses the exact same add-restaurant flow as the "+ مطعم جديد" dropdown option.
+els.restaurantSuggestChip.addEventListener('click', async () => {
+  const name = els.restaurantSuggestChip.dataset.name;
+  if (!name) return;
+  const confirmed = await showDialog({
+    title: 'تضيف المطعم ده؟',
+    message: `"${name}" مش موجود في قائمتك — تضيفه وتختاره للأوردر ده؟`,
+    confirmLabel: 'إضافة واختيار',
+  });
+  if (!confirmed) return;
+  restaurants.push(name);
+  saveRestaurants();
+  renderRestaurantOptions(name);
+  markAISuggested(els.restaurantSelect);
+  els.restaurantSuggestWrap.hidden = true;
+  updateOrderPreview();
+});
+
+// Phase 4 — tap-to-fill the free-text payment field from the AI's payment hint.
+// Only ever touches the free-text `payment` field — never the accounting paymentType.
+els.paymentHintChip.addEventListener('click', () => {
+  const fill = els.paymentHintChip.dataset.fill;
+  if (!fill) return;
+  els.paymentTextInput.value = fill;
+  markAISuggested(els.paymentTextInput);
+  els.paymentHintWrap.hidden = true;
+  updateOrderPreview();
+});
 
 function openEditEntry(i){
   const entry = log[i];
@@ -1644,11 +1930,78 @@ function openEditEntry(i){
   renderRestaurantOptions(entry.restaurant || restaurants[0]);
   els.areaTextInput.value = entry.area || '';
   els.paymentTextInput.value = entry.payment || '';
+  // Phase 4 — an edit loads confirmed saved data, never a fresh AI suggestion, so
+  // clear any leftover suggestion markers/banner/chips from a previous scan session.
+  [els.addrBuilding, els.addrFloor, els.addrApt, els.areaTextInput, els.paymentTextInput, els.restaurantSelect]
+    .forEach(el => el.classList.remove('ai-suggested'));
+  els.aiSuggestionNote.hidden = true;
+  els.restaurantSuggestWrap.hidden = true;
+  els.paymentHintWrap.hidden = true;
   updateOrderPreview();
   setupAccountingBlock(entry);
 
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   layerOpened('result');
+}
+
+// ---------- Phase 4: Android/WhatsApp Share Target ----------
+// Registration is fire-and-forget and fully non-fatal: if the browser doesn't
+// support Service Workers, or registration fails for any reason, Share Target
+// simply isn't available — camera/gallery capture are completely unaffected.
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// If we were opened via the sw.js share-target redirect (?shared=1), pull the
+// single temporarily-stored image out of IndexedDB, feed it into the EXACT SAME
+// capture pipeline as a camera/gallery photo (handleFile — no duplicated OCR/UI
+// logic), then delete it. The record is consumed (IndexedDB store cleared)
+// unconditionally, whether or not a usable image was actually found, so nothing
+// shared is ever left behind as permanent storage.
+async function consumePendingSharedImage(){
+  if (!location.search.includes('shared=1')) return;
+  history.replaceState(null, '', location.pathname); // strip ?shared=1 so a later refresh can't re-trigger this
+  if (!('indexedDB' in window)) return;
+  const DB_NAME = 'scanly-share-target';
+  const STORE_NAME = 'pending-image';
+  const STALE_MS = 10 * 60 * 1000; // 10 minutes — an older pending share is treated as abandoned and dropped
+  try{
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(STORE_NAME)){
+          req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get('pending');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    // Cleanup happens regardless of what was found above — a shared image is
+    // always single-use, never persisted beyond this one read.
+    await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+    db.close();
+
+    if (!record || !record.blob) return;
+    if (Date.now() - (record.savedAt || 0) > STALE_MS) return; // abandoned share — silently dropped, not surfaced as an error
+
+    const file = new File([record.blob], 'shared-receipt.jpg', { type: record.mimeType || 'image/jpeg' });
+    switchView('scan');
+    handleFile(file);
+  }catch(err){
+    // IndexedDB unavailable/failed for any reason — silently do nothing.
+    // Camera/gallery capture remain fully functional either way.
+  }
 }
 
 els.cameraBtn.addEventListener('click', () => els.fileInputCamera.click());
@@ -1700,13 +2053,21 @@ async function runScan(file, isFirstAttempt){
     setStatus('بيقرا الريسيت...');
     els.statusText.insertAdjacentHTML('beforeend', '<span class="spinner"></span>');
     const base64 = await resizeImageToBase64(file);
-    const { phone, alternates } = await extractPhone(base64);
+    // Phase 4 — single-photo scans now use the full-receipt endpoint (phone +
+    // suggested address/restaurant/area/payment fields). Batch mode is unchanged
+    // and still calls extractPhone() (phone-only) below, by design — batch review
+    // rows have no UI for the extra fields.
+    const receipt = await extractReceipt(base64);
+    const { phone } = receipt;
+    const alternates = []; // unchanged pre-existing dead field, see Known Issues
     setStatus('');
     if (isFirstAttempt){
-      openResult(phone, alternates); // full setup — this is a brand-new scan
+      openResult(phone, alternates, receipt); // full setup — this is a brand-new scan
     }else{
       // retry: only refresh the phone/alternates — never wipe address/restaurant/area/payment
-      // the driver may have already started typing while the first attempt was failing
+      // the driver may have already started typing while the first attempt was failing.
+      // This intentionally does NOT re-apply the retry's own fresh suggestions either,
+      // for the same reason — preserving whatever the driver has already edited.
       els.phoneInput.value = phone || '';
       els.resultHint.textContent = phone
         ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
@@ -1867,12 +2228,30 @@ els.batchSaveBtn.addEventListener('click', async () => {
   const valid = batchState.filter(b => b.phone);
   if (!valid.length){ showToast('مفيش أرقام تتحفظ'); return; }
   const activeShift = getActiveShift(); // Phase 3 — batch orders get shiftId but stay accounting-incomplete
+  const batchShiftId = activeShift ? activeShift.id : null;
+
+  // Phase 4 — duplicate detection: check each entry against (a) existing log
+  // entries already in this same shiftId bucket, and (b) other entries within
+  // this same batch (two receipts of the same customer scanned together are
+  // just as real a duplicate). Warning-only — every valid entry is still saved.
+  const seenNormalizedInBatch = [];
+  let duplicateCount = 0;
+  valid.forEach(b => {
+    const norm = normalizePhoneForCompare(b.phone);
+    if (norm){
+      const dupInLog = hasDuplicatePhoneInShift(b.phone, batchShiftId, -1);
+      const dupInBatch = seenNormalizedInBatch.includes(norm);
+      if (dupInLog || dupInBatch) duplicateCount++;
+      seenNormalizedInBatch.push(norm);
+    }
+  });
+
   valid.forEach(b => log.unshift({
     phone: b.phone,
     savedAt: new Date().toISOString(),
     building: null, floor: null, apt: null,
     restaurant: null, area: null, payment: null,
-    shiftId: activeShift ? activeShift.id : null,
+    shiftId: batchShiftId,
     paymentType: null, price: null, fee: null,
   }));
   await saveLog();
@@ -1882,7 +2261,8 @@ els.batchSaveBtn.addEventListener('click', async () => {
   layerClosedViaUI('batch');
   refreshShiftUI();
   const shiftNote = activeShift ? ' — استكمل بيانات المحاسبة من شاشة الأوردرات' : '';
-  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات${shiftNote}`);
+  const dupNote = duplicateCount > 0 ? ` — ⚠️ ${duplicateCount} رقم مكرر في نفس الشفت` : '';
+  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات${shiftNote}${dupNote}`);
 });
 
 // releases every batch thumbnail's memory — called right before batchState is cleared,
@@ -1980,6 +2360,12 @@ els.saveBtn.addEventListener('click', async () => {
     shiftId: orderShiftId,
     paymentType, price, fee,
   };
+  // Phase 4 — duplicate detection: same normalized phone within the same
+  // shiftId bucket (null shiftId included), excluding this order's own
+  // prior copy when editing. Warning-only: never blocks, merges, or deletes.
+  const dupExcludeIndex = isNewOrder ? -1 : editingIndex;
+  const isDuplicate = hasDuplicatePhoneInShift(phone, orderShiftId, dupExcludeIndex);
+
   if (editingIndex !== null && log[editingIndex]){
     log[editingIndex] = entryData;
   }else{
@@ -1993,7 +2379,7 @@ els.saveBtn.addEventListener('click', async () => {
   els.previewWrap.hidden = true;
   layerClosedViaUI('result');
   refreshShiftUI();
-  showToast('اتحفظ ✅');
+  showToast(isDuplicate ? 'اتحفظ ✅ — ⚠️ الرقم ده مسجل قبل كده في نفس الشفت' : 'اتحفظ ✅');
   switchView('orders');
 });
 
@@ -2060,6 +2446,7 @@ els.clearBtn.addEventListener('click', async () => {
   updateHeaderStatus();
   switchView('scan');
   renderShiftBlock();
+  consumePendingSharedImage(); // Phase 4 — Android/WhatsApp Share Target, no-op unless ?shared=1
 })();
 </script>
 </body>

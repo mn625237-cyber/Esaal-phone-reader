@@ -3,5 +3,8 @@
     "api/extract-phone.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "redirects": [
+    { "source": "/share-target", "destination": "/", "statusCode": 303 }
+  ]
 }
