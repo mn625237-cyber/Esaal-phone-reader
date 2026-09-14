@@ -49,8 +49,20 @@ module.exports = async function handler(req, res) {
   }
 
   const { image } = req.body || {};
-  if (!image) {
+  if (!image || typeof image !== 'string') {
     res.status(400).json({ error: 'missing image' });
+    return;
+  }
+
+  // Phase 6 — payload-size guard. This is a public, unauthenticated endpoint, so it
+  // needs a bound on request cost/abuse exposure, not a business rule: the app's own
+  // resize pipeline (maxDim 1100px, JPEG quality 0.75) produces base64 payloads far
+  // smaller than this ceiling for every real receipt photo. 8M base64 chars ≈ 6MB raw
+  // image — generous headroom over any legitimate use, same "abuse guard, not business
+  // rule" spirit as sw.js's MAX_IMAGE_BYTES ceiling for the Share Target flow.
+  const MAX_BASE64_CHARS = 8 * 1024 * 1024;
+  if (image.length > MAX_BASE64_CHARS) {
+    res.status(413).json({ error: 'image too large' });
     return;
   }
 

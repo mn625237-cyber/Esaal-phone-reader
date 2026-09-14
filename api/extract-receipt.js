@@ -90,8 +90,18 @@ module.exports = async function handler(req, res) {
   }
 
   const { image } = req.body || {};
-  if (!image) {
+  if (!image || typeof image !== 'string') {
     res.status(400).json({ error: 'missing image' });
+    return;
+  }
+
+  // Phase 6 — payload-size guard, identical policy to api/extract-phone.js (see the
+  // comment there for the full reasoning): public unauthenticated endpoint, bounding
+  // cost/abuse exposure, not a business rule. Duplicated deliberately rather than
+  // shared, same pattern as normalizePhone() above.
+  const MAX_BASE64_CHARS = 8 * 1024 * 1024;
+  if (image.length > MAX_BASE64_CHARS) {
+    res.status(413).json({ error: 'image too large' });
     return;
   }
 
