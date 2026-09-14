@@ -2,6 +2,9 @@
   "functions": {
     "api/extract-phone.js": {
       "maxDuration": 30
+    },
+    "api/extract-receipt.js": {
+      "maxDuration": 30
     }
   },
   "redirects": [

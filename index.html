@@ -173,6 +173,9 @@
     font-family:'JetBrains Mono', monospace; direction: ltr; unicode-bidi: isolate;
     background: var(--bg); border: 1px solid var(--border); color: var(--text);
     border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor:pointer;
+    /* Phase 6 — 44px minimum touch target (project rule); pill visual is unchanged,
+       the box itself just grows to a safe tap height with its content vertically centered. */
+    min-height: 44px; display: inline-flex; align-items: center;
   }
   .result-actions{ display:flex; gap:10px; margin-top: 14px; }
   .btn-ghost{
@@ -537,7 +540,8 @@
     -webkit-touch-callout: none;
   }
   /* Explicit opt-out: .chip is a <button> (caught by the rule above) but its content
-     is a real alternate phone number read from the receipt — it must stay selectable. */
+     is real data read from the receipt (AI-suggested restaurant name / payment hint) —
+     it must stay selectable. */
   .chip{
     user-select: text;
     -webkit-user-select: text;
@@ -591,10 +595,6 @@
         <p class="result-label">الرقم اللي اتقرا من الريسيت:</p>
         <input type="tel" id="phoneInput" class="phone-input" inputmode="numeric" maxlength="14" placeholder="01xxxxxxxxx" autocomplete="off">
         <p class="hint" id="resultHint">لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ</p>
-        <div class="alt-wrap" id="altWrap" hidden>
-          <span class="alt-label">أرقام تانية اتلاقت في نفس الصورة:</span>
-          <div class="alt-chips" id="altChips"></div>
-        </div>
 
         <!-- Phase 4: Gemini full-receipt extraction — informational only, never auto-confirms anything -->
         <p class="ai-suggestion-note" id="aiSuggestionNote" hidden>🤖 بعض البيانات تحت دي مقترحة من قراءة الصورة — راجعها وعدّلها لو محتاج قبل الحفظ</p>
@@ -782,8 +782,6 @@ const els = {
   resultCard: document.getElementById('resultCard'),
   phoneInput: document.getElementById('phoneInput'),
   resultHint: document.getElementById('resultHint'),
-  altWrap: document.getElementById('altWrap'),
-  altChips: document.getElementById('altChips'),
   addrBuilding: document.getElementById('addrBuilding'),
   addrFloor: document.getElementById('addrFloor'),
   addrApt: document.getElementById('addrApt'),
@@ -948,13 +946,23 @@ async function loadLog(){
     return [];
   }
 }
+// Phase 6 — returns true/false so callers can tell whether the write to disk actually
+// succeeded. Previously every caller assumed success unconditionally (closing the form,
+// navigating away, and showing its own "✅ saved" toast even when this catch block had
+// just shown "تعذّر الحفظ") — misleading the driver into believing data survived when
+// it may not (in-memory `log` still has it for this session, but a reload/close would
+// lose it). This does not change what's stored in-memory or roll back any mutation —
+// only whether callers get to claim success in the UI.
 async function saveLog(){
+  let ok = true;
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(log));
   }catch(e){
+    ok = false;
     showToast('تعذّر الحفظ — جرّب تاني');
   }
   updateHeaderStatus();
+  return ok;
 }
 function updateHeaderStatus(){
   els.headerStatus.textContent = log.length
@@ -1187,8 +1195,35 @@ async function copyToClipboard(text, successMsg){
 }
 
 // ---------- bottom navigation / view switching ----------
+
+// Phase 6 — Release Blocker #1 fix (editingIndex corruption via cross-tab deletion).
+// Pure, DOM-free guard: an active EDIT (editingIndex !== null, not a fresh new-order
+// scan) ties the open resultCard to one specific log[] array index. If the driver could
+// leave the Scan tab while that edit stayed open, deleting a DIFFERENT order from the
+// Orders tab would shift every index after it — so returning and saving would silently
+// overwrite the WRONG order (a financial/data-integrity risk, since accounting fields
+// are attached to the overwritten entry too). Blocking the tab-switch itself, rather
+// than trying to repair or track the stale index afterward, makes that scenario
+// structurally impossible: editingIndex can never go stale, because its tab can't be
+// left until the edit is resolved (Save or Cancel) — the same guarantee the existing
+// full-screen sheet/dialog/lightbox overlays already give sheetIndex, just applied here
+// to the (non-full-screen) result card.
+// A brand-new, not-yet-saved order (editingIndex === null) has no index dependency, so
+// leaving the tab in that case is unchanged from before this fix.
+function canLeaveScanTab(targetName, currentViewName, editingIndexValue, resultCardHidden){
+  if (targetName === currentViewName) return true; // no-op switch, always fine
+  if (currentViewName !== 'scan') return true;      // this guard only protects leaving Scan
+  if (editingIndexValue === null) return true;      // no active edit — nothing can go stale
+  if (resultCardHidden) return true;                // edit form isn't actually open/visible
+  return false;                                      // active edit open — block the switch
+}
+
 const VIEWS = { scan: els.viewScan, orders: els.viewOrders, more: els.viewMore };
 function switchView(name, fromBack){
+  if (!canLeaveScanTab(name, currentView, editingIndex, els.resultCard.hidden)){
+    showToast('خلّص التعديل أو دوس إلغاء الأول قبل ما تنقل الشاشة');
+    return;
+  }
   const prevView = currentView;
   Object.entries(VIEWS).forEach(([key, el]) => { el.hidden = key !== name; });
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -1283,6 +1318,16 @@ function formatTime(iso){
   try{
     return new Intl.DateTimeFormat('ar-EG', { dateStyle:'short', timeStyle:'short' }).format(new Date(iso));
   }catch(e){ return ''; }
+}
+
+// Phase 6 — standard CSV field escaping (RFC 4180 style): only used for the free-text
+// export columns (restaurant/area/payment/address) that can legitimately contain a
+// comma typed by the driver or suggested by Gemini — without this, such a value would
+// silently shift every column after it in the exported file. Phone numbers are plain
+// digit strings and never need this.
+function csvField(v){
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 function orderLinesFromEntry(entry){
@@ -1574,11 +1619,11 @@ els.sheetDeleteBtn.addEventListener('click', async () => {
   });
   if (!ok) return;
   log.splice(sheetIndex, 1);
-  await saveLog();
+  const persisted = await saveLog();
   closeOrderSheet();
   renderOrdersList();
   refreshShiftUI();
-  showToast('اتمسح');
+  if (persisted) showToast('اتمسح'); // on failure, saveLog() already showed the accurate error toast
 });
 
 // ---------- image resize (keeps upload small/fast on mobile data — phone-only extraction doesn't need a huge image) ----------
@@ -1620,7 +1665,7 @@ async function extractPhone(base64Image){
   }
   if (!response.ok) throw new Error('server-error');
   const data = await response.json();
-  return { phone: data.phone || null, alternates: [] };
+  return { phone: data.phone || null };
 }
 
 // ---------- Phase 4: full-receipt OCR (calls the NEW /api/extract-receipt endpoint —
@@ -1686,19 +1731,6 @@ function setStatus(msg, isError=false){
   els.statusText.hidden = !msg;
   els.statusText.textContent = msg;
   els.statusText.classList.toggle('error', isError);
-}
-
-function renderAlternates(list){
-  els.altChips.innerHTML = '';
-  els.altWrap.hidden = list.length === 0;
-  list.forEach(num => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip';
-    chip.textContent = num;
-    chip.addEventListener('click', () => { els.phoneInput.value = num; updateOrderPreview(); });
-    els.altChips.appendChild(chip);
-  });
 }
 
 // ---------- Phase 3: accounting block inside the order form ----------
@@ -1802,7 +1834,7 @@ els.copyOrderBtn.addEventListener('click', async () => {
   await copyToClipboard(lines.join('\n'), 'اتنسخ الأوردر ✅');
 });
 
-function openResult(phone, alternates = [], suggestion = null){
+function openResult(phone, suggestion = null){
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
   els.resultCard.hidden = false;
@@ -1810,7 +1842,6 @@ function openResult(phone, alternates = [], suggestion = null){
   els.resultHint.textContent = phone
     ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
     : 'مالقتش رقم في الصورة — اكتبه يدويًا';
-  renderAlternates(alternates);
   els.phoneInput.classList.remove('revealed');
   requestAnimationFrame(() => {
     void els.phoneInput.offsetWidth;
@@ -1917,7 +1948,6 @@ function openEditEntry(i){
 
   els.phoneInput.value = entry.phone || '';
   els.resultHint.textContent = 'بتعدّل أوردر محفوظ — احفظ لما تخلص';
-  renderAlternates([]);
   els.phoneInput.classList.add('revealed');
 
   els.addrBuilding.value = entry.building || '';
@@ -2059,12 +2089,11 @@ async function runScan(file, isFirstAttempt){
     // rows have no UI for the extra fields.
     const receipt = await extractReceipt(base64);
     const { phone } = receipt;
-    const alternates = []; // unchanged pre-existing dead field, see Known Issues
     setStatus('');
     if (isFirstAttempt){
-      openResult(phone, alternates, receipt); // full setup — this is a brand-new scan
+      openResult(phone, receipt); // full setup — this is a brand-new scan
     }else{
-      // retry: only refresh the phone/alternates — never wipe address/restaurant/area/payment
+      // retry: only refresh the phone — never wipe address/restaurant/area/payment
       // the driver may have already started typing while the first attempt was failing.
       // This intentionally does NOT re-apply the retry's own fresh suggestions either,
       // for the same reason — preserving whatever the driver has already edited.
@@ -2072,13 +2101,12 @@ async function runScan(file, isFirstAttempt){
       els.resultHint.textContent = phone
         ? 'لو الرقم غلط أو ناقص، عدّله يدويًا قبل الحفظ'
         : 'مالقتش رقم في الصورة — اكتبه يدويًا';
-      renderAlternates(alternates);
       updateOrderPreview();
     }
   }catch(err){
     setStatus(scanErrorMessage(err), true);
     els.retryScanBtn.hidden = false;
-    if (isFirstAttempt) openResult('', []); // first failure: reveal the manual-entry form
+    if (isFirstAttempt) openResult(''); // first failure: reveal the manual-entry form
     // a retry failure leaves the already-open form exactly as the driver left it
   } finally {
     isScanning = false;
@@ -2254,15 +2282,17 @@ els.batchSaveBtn.addEventListener('click', async () => {
     shiftId: batchShiftId,
     paymentType: null, price: null, fee: null,
   }));
-  await saveLog();
+  const persisted = await saveLog();
   els.batchCard.hidden = true;
   revokeBatchThumbs();
   batchState = [];
   layerClosedViaUI('batch');
   refreshShiftUI();
-  const shiftNote = activeShift ? ' — استكمل بيانات المحاسبة من شاشة الأوردرات' : '';
-  const dupNote = duplicateCount > 0 ? ` — ⚠️ ${duplicateCount} رقم مكرر في نفس الشفت` : '';
-  showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات${shiftNote}${dupNote}`);
+  if (persisted){ // on failure, saveLog() already showed the accurate error toast
+    const shiftNote = activeShift ? ' — استكمل بيانات المحاسبة من شاشة الأوردرات' : '';
+    const dupNote = duplicateCount > 0 ? ` — ⚠️ ${duplicateCount} رقم مكرر في نفس الشفت` : '';
+    showToast(`اتحفظ ${valid.length} رقم ✅ — تقدر تضيف العنوان/المطعم/المنطقة من شاشة الأوردرات${shiftNote}${dupNote}`);
+  }
 });
 
 // releases every batch thumbnail's memory — called right before batchState is cleared,
@@ -2374,12 +2404,14 @@ els.saveBtn.addEventListener('click', async () => {
   editingIndex = null;
   els.saveBtn.textContent = '💾 حفظ الأوردر';
   selectedPaymentType = null;
-  await saveLog();
+  const persisted = await saveLog();
   els.resultCard.hidden = true;
   els.previewWrap.hidden = true;
   layerClosedViaUI('result');
   refreshShiftUI();
-  showToast(isDuplicate ? 'اتحفظ ✅ — ⚠️ الرقم ده مسجل قبل كده في نفس الشفت' : 'اتحفظ ✅');
+  if (persisted){ // on failure, saveLog() already showed the accurate error toast
+    showToast(isDuplicate ? 'اتحفظ ✅ — ⚠️ الرقم ده مسجل قبل كده في نفس الشفت' : 'اتحفظ ✅');
+  }
   switchView('orders');
 });
 
@@ -2406,7 +2438,8 @@ els.copyAllBtn.addEventListener('click', async () => {
 
 els.csvBtn.addEventListener('click', () => {
   const rows = ['الرقم,التاريخ,عمارة,دور,شقة,المطعم,المنطقة,الدفع', ...log.map(e =>
-    `${e.phone},${formatTime(e.savedAt)},${e.building || ''},${e.floor || ''},${e.apt || ''},${e.restaurant || ''},${e.area || ''},${e.payment || ''}`
+    [e.phone, formatTime(e.savedAt), e.building, e.floor, e.apt, e.restaurant, e.area, e.payment]
+      .map(csvField).join(',')
   )];
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
@@ -2432,10 +2465,10 @@ els.clearBtn.addEventListener('click', async () => {
   });
   if (!ok) return;
   log = [];
-  await saveLog();
+  const persisted = await saveLog();
   renderOrdersList();
   refreshShiftUI();
-  showToast('اتمسح الكل');
+  if (persisted) showToast('اتمسح الكل'); // on failure, saveLog() already showed the accurate error toast
 });
 
 // ---------- init ----------
