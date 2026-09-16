@@ -1,6 +1,7 @@
 {
   "name": "Scanly - Delivery",
   "short_name": "Scanly",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -22,6 +23,20 @@
       ]
     }
   },
+  "shortcuts": [
+    {
+      "name": "امسح ريسيت",
+      "short_name": "مسح",
+      "url": "/?view=scan",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "الأوردرات",
+      "short_name": "الأوردرات",
+      "url": "/?view=orders",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icons/icon-48.png",

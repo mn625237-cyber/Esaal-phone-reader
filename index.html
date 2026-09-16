@@ -7,6 +7,15 @@
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#2A5C8A">
 <link rel="icon" href="/icons/icon-192.png" type="image/png">
+<!-- Phase 10 — F: iOS "Add to Home Screen" doesn't read manifest.json the way Android
+     does, so without these it shows a generic screenshot thumbnail instead of the real
+     icon and opens inside Safari's browser chrome instead of standalone. Reuses the
+     existing icon file — no new assets. -->
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Scanly">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -296,6 +305,10 @@
     border-radius: 20px; padding: 6px 13px;
   }
   .more-footnote{ font-size:11px; color: var(--text-secondary); text-align:center; margin-top:4px; }
+  /* Phase 10 — D: Privacy & Data Transparency. Reuses existing tokens/typography only
+     (var(--text-secondary), Cairo font already inherited) — no new design language. */
+  .privacy-note{ font-size:12.5px; line-height:1.7; color: var(--text-secondary); margin:0 0 9px; font-weight:600; }
+  .privacy-note:last-child{ margin-bottom:0; }
 
   /* ---------- bottom navigation ---------- */
   .bottom-nav{
@@ -311,6 +324,7 @@
     background:none; border:none; color: var(--text-secondary);
     font-family:'Cairo',sans-serif; font-weight:700; font-size:11px;
     padding: 6px 4px 2px; border-radius:12px; min-height:44px;
+    transition: color .15s ease; /* Phase 10 — G: subtle tab-switch feel, respects reduced-motion below */
   }
   .nav-btn .nav-icon{ font-size:19px; line-height:1; }
   .nav-btn.active{ color: var(--primary); }
@@ -337,7 +351,7 @@
     max-width: 88vw; text-align:center;
   }
   .toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
-  @media (prefers-reduced-motion: reduce){ .toast{ transition:none; } }
+  @media (prefers-reduced-motion: reduce){ .toast{ transition:none; } .nav-btn{ transition:none; } }
 
   /* ---------- batch review ---------- */
   .batch-list{ list-style:none; margin:0 0 14px; padding:0; max-height: 55vh; overflow-y:auto; }
@@ -677,8 +691,23 @@
         </div>
       </div>
       <div class="more-block">
+        <h3>نسخة احتياطية</h3>
+        <div class="more-actions">
+          <button class="btn-small" id="backupExportBtn">⬇️ تصدير نسخة احتياطية</button>
+          <button class="btn-small" id="backupRestoreBtn">⬆️ استرجاع من نسخة احتياطية</button>
+        </div>
+        <input type="file" id="backupFileInput" accept="application/json" hidden>
+        <p class="privacy-note">النسخة الاحتياطية بتشمل كل الأوردرات والمطاعم والشفتات، وبتترفع كملف JSON على جهازك بس — من غير ما تتبعت لأي سيرفر. الاسترجاع بيستبدل بياناتك الحالية بالكامل، وهيطلب تأكيد منك الأول.</p>
+      </div>
+      <div class="more-block">
         <h3>المطاعم المحفوظة</h3>
         <div class="restaurant-chips" id="restaurantChips"></div>
+      </div>
+      <div class="more-block">
+        <h3>الخصوصية وبياناتك</h3>
+        <p class="privacy-note">🔒 كل بيانات الأوردرات (الأرقام، العناوين، المطاعم، المناطق) وبيانات الشفتات محفوظة على جهازك بس (Local Storage) — مفيش نسخة منها على أي سيرفر.</p>
+        <p class="privacy-note">📷 وقت "قراءة الريسيت" بالذكاء الاصطناعي: صورة الريسيت بتتبعت لحظيًا لسيرفر Scanly، اللي بيبعتها لخدمة Gemini (من Google) عشان تقرا البيانات منها، وبيرجعلك النتيجة على طول — من غير ما يتم تخزين الصورة أو نتيجتها على أي سيرفر.</p>
+        <p class="privacy-note">🗑 تقدر تمسح كل بياناتك المحفوظة على الجهاز في أي وقت من "منطقة الخطر" تحت.</p>
       </div>
       <div class="more-block">
         <h3>منطقة الخطر</h3>
@@ -686,7 +715,7 @@
           <button class="btn-small btn-danger" id="clearBtn">🗑 مسح كل السجل</button>
         </div>
       </div>
-      <p class="more-footnote">Scanly 🛵 — بياناتك محفوظة على جهازك بس، مفيش سيرفر بيشوفها</p>
+      <p class="more-footnote">Scanly 🛵 — مفيش حساب مستخدم ولا تتبّع، وبياناتك تحت تحكّمك بالكامل</p>
     </section>
   </main>
 
@@ -806,6 +835,10 @@ const els = {
   csvBtn: document.getElementById('csvBtn'),
   clearBtn: document.getElementById('clearBtn'),
   restaurantChips: document.getElementById('restaurantChips'),
+  // ---- Phase 10 — C: Backup & Restore ----
+  backupExportBtn: document.getElementById('backupExportBtn'),
+  backupRestoreBtn: document.getElementById('backupRestoreBtn'),
+  backupFileInput: document.getElementById('backupFileInput'),
   orderSheet: document.getElementById('orderSheet'),
   sheetBackdrop: document.getElementById('sheetBackdrop'),
   sheetPanel: document.getElementById('sheetPanel'),
@@ -1039,6 +1072,7 @@ async function startShift(){
   if (!els.resultCard.hidden && editingIndex === null){
     setupAccountingBlock(null);
   }
+  hapticTick();
   showToast('اتبدأ الشفت 🟢');
 }
 
@@ -1076,6 +1110,7 @@ async function endShift(){
   active.status = 'closed';
   saveShifts();
   refreshShiftUI();
+  hapticTick();
   showToast('اتقفل الشفت ✅');
 }
 
@@ -1182,6 +1217,33 @@ function showToast(msg){
   els.toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> els.toast.classList.remove('show'), 1800);
+}
+
+// ---------- Phase 10 — H: UI Resilience (global safety net) ----------
+// Every existing flow (scan pipeline, save/load, clipboard, dialogs, batch, CSV, etc.)
+// already has its own targeted try/catch with a specific Arabic message — this does NOT
+// replace or weaken any of that. It only catches whatever ISN'T already caught: a genuine
+// unexpected bug somewhere else in the app that would otherwise fail completely silently,
+// leaving the driver staring at a frozen/unresponsive screen with zero feedback.
+// Nothing is hidden from the developer: neither listener calls preventDefault(), so the
+// browser's own console error/warning for the failure still appears exactly as before —
+// this purely ADDS a non-blocking toast, it never swallows or replaces console output.
+let lastGlobalErrorToastAt = 0;
+function showGlobalErrorToastOnce(){
+  const now = Date.now();
+  if (now - lastGlobalErrorToastAt < 4000) return; // avoid toast spam from cascading errors
+  lastGlobalErrorToastAt = now;
+  showToast('حصل خطأ غير متوقع — جرّب تاني');
+}
+window.addEventListener('error', showGlobalErrorToastOnce);
+window.addEventListener('unhandledrejection', showGlobalErrorToastOnce);
+
+// Phase 10 — G: optional haptic feedback on meaningful confirmations only (order saved,
+// shift started/ended) — not sprinkled everywhere. Silently no-ops on platforms without
+// navigator.vibrate (iOS Safari, some browsers); never throws, never blocks the action
+// it's attached to.
+function hapticTick(){
+  try{ if (navigator.vibrate) navigator.vibrate(12); }catch(e){}
 }
 
 // ---------- clipboard (never fails silently — always confirms success or failure) ----------
@@ -2410,6 +2472,7 @@ els.saveBtn.addEventListener('click', async () => {
   layerClosedViaUI('result');
   refreshShiftUI();
   if (persisted){ // on failure, saveLog() already showed the accurate error toast
+    hapticTick();
     showToast(isDuplicate ? 'اتحفظ ✅ — ⚠️ الرقم ده مسجل قبل كده في نفس الشفت' : 'اتحفظ ✅');
   }
   switchView('orders');
@@ -2471,13 +2534,159 @@ els.clearBtn.addEventListener('click', async () => {
   if (persisted) showToast('اتمسح الكل'); // on failure, saveLog() already showed the accurate error toast
 });
 
+// ============================================================
+// Phase 10 — C: Backup & Restore
+//
+// Backs up exactly the three localStorage-persisted arrays this app actually has —
+// confirmed by reading the real STORAGE_KEY / RESTAURANTS_KEY / SHIFTS_KEY usage in this
+// same file, nothing guessed. Export is a plain client-side JSON file download, nothing
+// sent to any server (same as CSV export just above). Restore VALIDATES structure and
+// schema version BEFORE touching any in-memory state — any validation failure aborts
+// with zero side effects (no partial/silent destructive restore).
+// ============================================================
+const BACKUP_SCHEMA_VERSION = 1;
+
+function buildBackupPayload(){
+  return {
+    scanlyBackupSchemaVersion: BACKUP_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      phoneLog: log,
+      restaurantList: restaurants,
+      shifts: shifts,
+    },
+  };
+}
+
+els.backupExportBtn.addEventListener('click', () => {
+  const payload = buildBackupPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = `scanly-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('اتحمّلت النسخة الاحتياطية ✅');
+});
+
+// Pure validation — never touches log/restaurants/shifts. Returns either
+// { ok:true, data:{phoneLog,restaurantList,shifts} } or { ok:false, reason:<Arabic message> }.
+function validateBackupPayload(parsed){
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.scanlyBackupSchemaVersion !== 'number'){
+    return { ok: false, reason: 'الملف ده مش نسخة احتياطية صالحة من Scanly' };
+  }
+  if (parsed.scanlyBackupSchemaVersion !== BACKUP_SCHEMA_VERSION){
+    return { ok: false, reason: `النسخة الاحتياطية دي من إصدار غير متوافق (v${parsed.scanlyBackupSchemaVersion}) — الإصدار المدعوم هنا هو v${BACKUP_SCHEMA_VERSION}` };
+  }
+  const data = parsed.data;
+  if (!data || typeof data !== 'object'){
+    return { ok: false, reason: 'الملف تالف — بيانات النسخة الاحتياطية مفقودة' };
+  }
+  const { phoneLog, restaurantList, shifts: shiftsData } = data;
+  if (!Array.isArray(phoneLog) || !Array.isArray(restaurantList) || !Array.isArray(shiftsData)){
+    return { ok: false, reason: 'الملف تالف — شكل البيانات مش مطابق' };
+  }
+  if (!phoneLog.every(o => o && typeof o === 'object' && typeof o.phone === 'string')){
+    return { ok: false, reason: 'الملف تالف — بيانات الأوردرات فيها مشكلة' };
+  }
+  if (!restaurantList.every(r => typeof r === 'string')){
+    return { ok: false, reason: 'الملف تالف — قائمة المطاعم فيها مشكلة' };
+  }
+  if (!shiftsData.every(s => s && typeof s === 'object' && typeof s.id === 'string' && typeof s.status === 'string')){
+    return { ok: false, reason: 'الملف تالف — بيانات الشفتات فيها مشكلة' };
+  }
+  return { ok: true, data: { phoneLog, restaurantList, shifts: shiftsData } };
+}
+
+els.backupRestoreBtn.addEventListener('click', () => {
+  // Same protection as "مسح كل السجل" — a live shift depends on its own orders for the
+  // Live Settlement card; silently swapping the underlying data out from under it would
+  // corrupt that shift's numbers mid-flight.
+  if (getActiveShift()){
+    showToast('مينفعش تسترجع نسخة احتياطية والشفت شغال — أنهِ الشفت الأول');
+    return;
+  }
+  els.backupFileInput.click();
+});
+
+els.backupFileInput.addEventListener('change', async () => {
+  const file = els.backupFileInput.files[0];
+  els.backupFileInput.value = '';
+  if (!file) return;
+
+  let parsed;
+  try{
+    const text = await file.text();
+    parsed = JSON.parse(text);
+  }catch(e){
+    showToast('الملف ده مش JSON صالح');
+    return;
+  }
+
+  const result = validateBackupPayload(parsed);
+  if (!result.ok){
+    showToast(result.reason);
+    return;
+  }
+
+  // Re-check right before the confirmation too — a shift could in principle be started
+  // in the brief moment between tapping the button and picking a file in the OS picker.
+  if (getActiveShift()){
+    showToast('مينفعش تسترجع نسخة احتياطية والشفت شغال — أنهِ الشفت الأول');
+    return;
+  }
+
+  const { phoneLog, restaurantList, shifts: shiftsData } = result.data;
+  const confirmed = await showDialog({
+    title: 'تسترجع النسخة الاحتياطية دي؟',
+    message: `الملف فيه ${phoneLog.length} أوردر و${restaurantList.length} مطعم و${shiftsData.length} شفت. هيتم استبدال بياناتك الحالية بالكامل (${log.length} أوردر و${restaurants.length} مطعم و${shifts.length} شفت حاليًا) — الخطوة دي مش هترجع.`,
+    danger: true,
+    confirmLabel: 'استبدال واسترجاع',
+  });
+  if (!confirmed) return;
+
+  log = phoneLog;
+  restaurants = restaurantList.length ? restaurantList : ['اما'];
+  shifts = shiftsData;
+
+  const logOk = await saveLog();
+  saveRestaurants();
+  saveShifts();
+
+  ordersVisibleCount = 5;
+  renderOrdersList();
+  renderShiftBlock();
+  if (currentView === 'orders') renderSettlementCard();
+  if (currentView === 'more') renderRestaurantChips();
+
+  if (logOk) showToast('اتسترجعت النسخة الاحتياطية ✅'); // on failure, saveLog() already showed the accurate error toast
+});
+
 // ---------- init ----------
 (async () => {
   log = await loadLog();
   restaurants = loadRestaurants();
   shifts = loadShifts();
   updateHeaderStatus();
-  switchView('scan');
+
+  // Phase 10 — F: Native Launch Experience. Supports manifest.json's "shortcuts"
+  // (Android long-press quick actions: "امسح ريسيت" -> /?view=scan, "الأوردرات" ->
+  // /?view=orders). Only recognizes the two real views reachable this way; anything
+  // else falls back to the normal default (Scan). Strips just the `view` param so a
+  // later refresh doesn't re-trigger it, while leaving any other param (like Share
+  // Target's ?shared=1) completely untouched for consumePendingSharedImage() below.
+  const urlParams = new URLSearchParams(location.search);
+  const requestedView = urlParams.get('view');
+  let initialView = 'scan';
+  if (requestedView === 'orders' || requestedView === 'more'){
+    initialView = requestedView;
+    urlParams.delete('view');
+    const newSearch = urlParams.toString();
+    history.replaceState(null, '', location.pathname + (newSearch ? '?' + newSearch : ''));
+  }
+
+  switchView(initialView);
   renderShiftBlock();
   consumePendingSharedImage(); // Phase 4 — Android/WhatsApp Share Target, no-op unless ?shared=1
 })();
