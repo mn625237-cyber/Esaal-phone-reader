@@ -36,15 +36,96 @@ function normalizePhone(raw) {
   return /^01[0125]\d{8}$/.test(s) ? s : null;
 }
 
+// ============================================================
+// Phase 10 — A: Gemini API Protection (rate limiting).
+//
+// Both extraction endpoints are public and unauthenticated, so the payload-size guard
+// (Phase 6) alone doesn't stop repeated SMALL requests from draining the Gemini quota.
+// This adds a per-IP request-frequency limit using Upstash Redis's REST API, called
+// directly via fetch — deliberately NOT the @upstash/redis npm SDK, because this project
+// has zero npm dependencies today (no package.json) and adding one would turn every
+// future deploy into an `npm install` step this mobile-only, no-CLI workflow can't easily
+// debug if it ever breaks. The REST API needs nothing but fetch, which this file already
+// uses for Gemini itself.
+//
+// Configuration: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN as Vercel
+// environment variables (see deployment notes). These are the exact names Vercel's own
+// "Upstash for Redis" Marketplace storage integration injects automatically when you
+// connect a database to this project — no manual credential copying needed.
+//
+// FAIL-OPEN BY DESIGN: if the env vars are missing, or the Upstash call fails/errors for
+// any reason (outage, network hiccup, wrong credentials), the request is ALLOWED through
+// exactly as it behaved before Phase 10. A broken or not-yet-configured rate limiter must
+// never take down real courier usage — it only means this one abuse guard is temporarily
+// inactive, same "safety net, not a gate" spirit as sw.js's Share Target fallback redirect.
+//
+// Data minimalism: the only thing stored is a per-IP integer counter under a key that
+// self-expires every window — no image, no personal data, no request content is ever
+// sent to or kept in the rate-limit store.
+const RATE_LIMIT_MAX = 30;         // max requests per IP per window — generous enough for
+                                    // a full batch upload (extractPhone() is also called
+                                    // once per photo, sequentially, by handleBatch() in
+                                    // index.html)
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+
+function getClientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
+  if (typeof req.headers['x-real-ip'] === 'string') return req.headers['x-real-ip'];
+  return 'unknown'; // never block on a missing/unparseable IP — see fail-open note above
+}
+
+async function checkRateLimit(ip) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return { allowed: true, configured: false };
+
+  try {
+    const key = `ratelimit:extract-phone:${ip}`;
+    const pipelineRes = await fetch(`${url}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([
+        ['INCR', key],
+        ['EXPIRE', key, RATE_LIMIT_WINDOW_SECONDS],
+      ]),
+    });
+    if (!pipelineRes.ok) return { allowed: true, configured: true }; // fail open
+    const results = await pipelineRes.json();
+    const count = results?.[0]?.result;
+    if (typeof count !== 'number') return { allowed: true, configured: true }; // fail open
+    return { allowed: count <= RATE_LIMIT_MAX, configured: true, count };
+  } catch (e) {
+    console.error('[extract-phone] rate-limit check failed — failing open', e);
+    return { allowed: true, configured: true };
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method not allowed' });
     return;
   }
 
+  // Phase 10 — A: Gemini API Protection. Checked before the API key / image validation
+  // so a rate-limited caller never even reaches the point of touching Gemini quota.
+  const clientIp = getClientIp(req);
+  const rateLimit = await checkRateLimit(clientIp);
+  if (!rateLimit.allowed) {
+    res.status(429).json({ error: 'rate-limited' });
+    return;
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: 'server not configured — missing GEMINI_API_KEY' });
+    // Phase 10 — API Error Privacy: the specific missing env var name is an internal
+    // implementation detail; log it server-side only (Vercel function logs), never in
+    // the response body. The client only needs to know the server isn't usable right now.
+    console.error('[extract-phone] server not configured — missing GEMINI_API_KEY');
+    res.status(500).json({ error: 'server-not-configured' });
     return;
   }
 
@@ -101,8 +182,13 @@ module.exports = async function handler(req, res) {
     );
 
     if (!geminiRes.ok) {
+      // Phase 10 — API Error Privacy: geminiRes body can contain upstream diagnostic
+      // text (and even reveals which AI provider is used) — log it server-side only,
+      // never forward it to the client. Status code (502 = bad upstream) is preserved
+      // so this stays a real, correctly-categorized failure, not a hidden one.
       const detail = await geminiRes.text();
-      res.status(502).json({ error: 'gemini-request-failed', detail });
+      console.error('[extract-phone] upstream request failed', geminiRes.status, detail);
+      res.status(502).json({ error: 'upstream-unavailable' });
       return;
     }
 
@@ -122,6 +208,9 @@ module.exports = async function handler(req, res) {
     const phone = normalizePhone(rawPhone);
     res.status(200).json({ phone });
   } catch (err) {
+    // Phase 10 — API Error Privacy: response body was already generic (no leak) —
+    // the only addition here is internal visibility for debugging real failures.
+    console.error('[extract-phone] unexpected server error', err);
     res.status(500).json({ error: 'server-error' });
   }
 };

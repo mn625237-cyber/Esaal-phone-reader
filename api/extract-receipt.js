@@ -77,15 +77,77 @@ function sanitizePaymentHint(raw) {
   return { type, amountText };
 }
 
+// ============================================================
+// Phase 10 — A: Gemini API Protection (rate limiting).
+// Identical policy and reasoning as api/extract-phone.js (see that file's comment for
+// the full explanation): Upstash REST API via fetch, no npm dependency, fail-open by
+// design, per-IP counter only (no personal data / image data ever sent to the store).
+// Duplicated deliberately rather than shared, same pattern this file already follows
+// for normalizePhone()/sanitizeSuggestedText()/sanitizePaymentHint().
+//
+// Limit is lower than extract-phone.js's (15 vs 30 per 60s) because this endpoint is
+// only ever called once per single-photo scan (never in a batch loop — batch mode uses
+// extract-phone.js instead, per the project's locked batch-architecture decision).
+const RATE_LIMIT_MAX = 15;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+
+function getClientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
+  if (typeof req.headers['x-real-ip'] === 'string') return req.headers['x-real-ip'];
+  return 'unknown';
+}
+
+async function checkRateLimit(ip) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return { allowed: true, configured: false };
+
+  try {
+    const key = `ratelimit:extract-receipt:${ip}`;
+    const pipelineRes = await fetch(`${url}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([
+        ['INCR', key],
+        ['EXPIRE', key, RATE_LIMIT_WINDOW_SECONDS],
+      ]),
+    });
+    if (!pipelineRes.ok) return { allowed: true, configured: true };
+    const results = await pipelineRes.json();
+    const count = results?.[0]?.result;
+    if (typeof count !== 'number') return { allowed: true, configured: true };
+    return { allowed: count <= RATE_LIMIT_MAX, configured: true, count };
+  } catch (e) {
+    console.error('[extract-receipt] rate-limit check failed — failing open', e);
+    return { allowed: true, configured: true };
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method not allowed' });
     return;
   }
 
+  // Phase 10 — A: Gemini API Protection. Checked first, before API key / image validation.
+  const clientIp = getClientIp(req);
+  const rateLimit = await checkRateLimit(clientIp);
+  if (!rateLimit.allowed) {
+    res.status(429).json({ error: 'rate-limited' });
+    return;
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: 'server not configured — missing GEMINI_API_KEY' });
+    // Phase 10 — API Error Privacy (same policy as api/extract-phone.js, duplicated
+    // deliberately per this file's existing pattern): internal detail logged server-side
+    // only, never in the response body.
+    console.error('[extract-receipt] server not configured — missing GEMINI_API_KEY');
+    res.status(500).json({ error: 'server-not-configured' });
     return;
   }
 
@@ -161,8 +223,12 @@ module.exports = async function handler(req, res) {
     );
 
     if (!geminiRes.ok) {
+      // Phase 10 — API Error Privacy: no upstream diagnostic text or provider name
+      // reaches the client; status code (502) is preserved so this stays correctly
+      // categorized as an upstream failure.
       const detail = await geminiRes.text();
-      res.status(502).json({ error: 'gemini-request-failed', detail });
+      console.error('[extract-receipt] upstream request failed', geminiRes.status, detail);
+      res.status(502).json({ error: 'upstream-unavailable' });
       return;
     }
 
@@ -193,6 +259,7 @@ module.exports = async function handler(req, res) {
 
     res.status(200).json(result);
   } catch (err) {
+    console.error('[extract-receipt] unexpected server error', err);
     res.status(500).json({ error: 'server-error' });
   }
 };
