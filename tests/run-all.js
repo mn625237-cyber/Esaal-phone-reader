@@ -5,7 +5,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 
-const suites = ['core-logic.test.js', 'api-endpoints.test.js', 'static-checks.test.js'];
+const suites = ['core-logic.test.js', 'api-endpoints.test.js', 'static-checks.test.js', 'upstash-rate-limit.test.js'];
 let failed = false;
 
 for (const suite of suites){
