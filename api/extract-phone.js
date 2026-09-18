@@ -5,6 +5,8 @@
 // area, and payment method are entered manually in the UI. Gemini's own output
 // is never trusted blindly — normalizePhone() re-validates it independently.
 
+const { checkRateLimit } = require('../lib/upstash-rate-limit');
+
 const PROMPT = `You are reading a photo of an Egyptian restaurant delivery receipt. Find the customer's mobile phone number. Egyptian mobile numbers start with 01 and have exactly 11 digits total (e.g. 01012345678). They may appear with a +20 country code, spaces, or dashes, or may be duplicated in different formats on the same receipt. If several phone-like numbers appear, prefer the one nearest "Customer Information" or the delivery address, not a restaurant hotline or order number. Respond with ONLY raw JSON and nothing else - no markdown fences, no explanation: {"phone": "01XXXXXXXXX"} using exactly 11 digits and no other characters, or {"phone": null} if you cannot find one.`;
 
 // Converts Arabic-Indic (٠-٩) and Extended Arabic-Indic/Persian (۰-۹) digits to
@@ -36,85 +38,16 @@ function normalizePhone(raw) {
   return /^01[0125]\d{8}$/.test(s) ? s : null;
 }
 
-// ============================================================
-// Phase 10 — A: Gemini API Protection (rate limiting).
-//
-// Both extraction endpoints are public and unauthenticated, so the payload-size guard
-// (Phase 6) alone doesn't stop repeated SMALL requests from draining the Gemini quota.
-// This adds a per-IP request-frequency limit using Upstash Redis's REST API, called
-// directly via fetch — deliberately NOT the @upstash/redis npm SDK, because this project
-// has zero npm dependencies today (no package.json) and adding one would turn every
-// future deploy into an `npm install` step this mobile-only, no-CLI workflow can't easily
-// debug if it ever breaks. The REST API needs nothing but fetch, which this file already
-// uses for Gemini itself.
-//
-// Configuration: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN as Vercel
-// environment variables (see deployment notes). These are the exact names Vercel's own
-// "Upstash for Redis" Marketplace storage integration injects automatically when you
-// connect a database to this project — no manual credential copying needed.
-//
-// FAIL-OPEN BY DESIGN: if the env vars are missing, or the Upstash call fails/errors for
-// any reason (outage, network hiccup, wrong credentials), the request is ALLOWED through
-// exactly as it behaved before Phase 10. A broken or not-yet-configured rate limiter must
-// never take down real courier usage — it only means this one abuse guard is temporarily
-// inactive, same "safety net, not a gate" spirit as sw.js's Share Target fallback redirect.
-//
-// Data minimalism: the only thing stored is a per-IP integer counter under a key that
-// self-expires every window — no image, no personal data, no request content is ever
-// sent to or kept in the rate-limit store.
-const RATE_LIMIT_MAX = 30;         // max requests per IP per window — generous enough for
-                                    // a full batch upload (extractPhone() is also called
-                                    // once per photo, sequentially, by handleBatch() in
-                                    // index.html)
-const RATE_LIMIT_WINDOW_SECONDS = 60;
-
-function getClientIp(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
-  if (typeof req.headers['x-real-ip'] === 'string') return req.headers['x-real-ip'];
-  return 'unknown'; // never block on a missing/unparseable IP — see fail-open note above
-}
-
-async function checkRateLimit(ip) {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return { allowed: true, configured: false };
-
-  try {
-    const key = `ratelimit:extract-phone:${ip}`;
-    const pipelineRes = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, RATE_LIMIT_WINDOW_SECONDS],
-      ]),
-    });
-    if (!pipelineRes.ok) return { allowed: true, configured: true }; // fail open
-    const results = await pipelineRes.json();
-    const count = results?.[0]?.result;
-    if (typeof count !== 'number') return { allowed: true, configured: true }; // fail open
-    return { allowed: count <= RATE_LIMIT_MAX, configured: true, count };
-  } catch (e) {
-    console.error('[extract-phone] rate-limit check failed — failing open', e);
-    return { allowed: true, configured: true };
-  }
-}
-
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method not allowed' });
     return;
   }
 
-  // Phase 10 — A: Gemini API Protection. Checked before the API key / image validation
-  // so a rate-limited caller never even reaches the point of touching Gemini quota.
-  const clientIp = getClientIp(req);
-  const rateLimit = await checkRateLimit(clientIp);
+  // Phase 10 — A: Gemini API Protection.
+  const rateLimit = await checkRateLimit({ req, endpoint: 'extract-phone', limit: 30 });
   if (!rateLimit.allowed) {
+    if (typeof res.setHeader === 'function') res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds || 60));
     res.status(429).json({ error: 'rate-limited' });
     return;
   }

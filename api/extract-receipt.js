@@ -13,6 +13,8 @@
 // used to silently set the financial paymentType — that stays a manual driver
 // action, same as Phase 3.
 
+const { checkRateLimit } = require('../lib/upstash-rate-limit');
+
 const PROMPT = `You are reading a photo of an Egyptian restaurant delivery receipt, written in Arabic and/or English. Extract ONLY what is clearly visible on the receipt itself — never guess, infer, or invent a plausible-looking value for anything that isn't actually printed or handwritten there. If a field is unclear, missing, or ambiguous, respond with null for that field.
 
 Fields to extract:
@@ -77,66 +79,16 @@ function sanitizePaymentHint(raw) {
   return { type, amountText };
 }
 
-// ============================================================
-// Phase 10 — A: Gemini API Protection (rate limiting).
-// Identical policy and reasoning as api/extract-phone.js (see that file's comment for
-// the full explanation): Upstash REST API via fetch, no npm dependency, fail-open by
-// design, per-IP counter only (no personal data / image data ever sent to the store).
-// Duplicated deliberately rather than shared, same pattern this file already follows
-// for normalizePhone()/sanitizeSuggestedText()/sanitizePaymentHint().
-//
-// Limit is lower than extract-phone.js's (15 vs 30 per 60s) because this endpoint is
-// only ever called once per single-photo scan (never in a batch loop — batch mode uses
-// extract-phone.js instead, per the project's locked batch-architecture decision).
-const RATE_LIMIT_MAX = 15;
-const RATE_LIMIT_WINDOW_SECONDS = 60;
-
-function getClientIp(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
-  if (typeof req.headers['x-real-ip'] === 'string') return req.headers['x-real-ip'];
-  return 'unknown';
-}
-
-async function checkRateLimit(ip) {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return { allowed: true, configured: false };
-
-  try {
-    const key = `ratelimit:extract-receipt:${ip}`;
-    const pipelineRes = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, RATE_LIMIT_WINDOW_SECONDS],
-      ]),
-    });
-    if (!pipelineRes.ok) return { allowed: true, configured: true };
-    const results = await pipelineRes.json();
-    const count = results?.[0]?.result;
-    if (typeof count !== 'number') return { allowed: true, configured: true };
-    return { allowed: count <= RATE_LIMIT_MAX, configured: true, count };
-  } catch (e) {
-    console.error('[extract-receipt] rate-limit check failed — failing open', e);
-    return { allowed: true, configured: true };
-  }
-}
-
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method not allowed' });
     return;
   }
 
-  // Phase 10 — A: Gemini API Protection. Checked first, before API key / image validation.
-  const clientIp = getClientIp(req);
-  const rateLimit = await checkRateLimit(clientIp);
+  // Phase 10 — A: Gemini API Protection.
+  const rateLimit = await checkRateLimit({ req, endpoint: 'extract-receipt', limit: 15 });
   if (!rateLimit.allowed) {
+    if (typeof res.setHeader === 'function') res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds || 60));
     res.status(429).json({ error: 'rate-limited' });
     return;
   }
